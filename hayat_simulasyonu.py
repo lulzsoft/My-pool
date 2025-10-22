@@ -299,6 +299,12 @@ def main():
         durumu_goster(oyuncu, zaman, piyasa)
 
         if oyuncu.otomasyon_modu:
+            yanit = input("Otomasyon devrede... Devam etmek için Enter'a basın veya 'kapat' yazarak modu durdurun: ")
+            if yanit.lower() == 'kapat':
+                oyuncu.otomasyon_modu = False
+                print("Otomasyon modu kapatıldı.")
+                time.sleep(2)
+                continue
             harcanan_saat = otomasyonu_calistir(oyuncu, zaman, piyasa)
         else:
             harcanan_saat = eylem_sec(oyuncu, zaman, piyasa)
@@ -573,31 +579,31 @@ def otomasyonu_calistir(oyuncu, zaman, piyasa):
     """Otomasyon modu aktifken oyuncunun temel ihtiyaçlarını karşılar."""
     print("\n--- OTOMASYON DEVREDE ---")
 
-    # Öncelik sırasına göre ihtiyaçları kontrol et
-    if oyuncu.enerji < 20:
-        print("Otomasyon: Enerji düşük, uyumak gerekiyor.")
-        return uyu(oyuncu)
-
+    # Yüksek öncelikli acil durumlar
     if oyuncu.aclik > 80:
         print("Otomasyon: Açlık kritik seviyede, yemek yeniyor.")
-        # Basitçe envanterdeki ilk yemeği ye, yoksa al.
         yemekler = [y for y in oyuncu.envanter if "yemeği" in y or "abur cubur" in y]
         if yemekler:
             return envanter_kullan(oyuncu, override_secim=yemekler[0])
         else:
             print("Otomasyon: Yiyecek kalmamış, markete gidiliyor.")
-            return alisveris_yap(oyuncu, None, None, otomasyon_hedef="ev yemeği")
+            return alisveris_yap(oyuncu, zaman, piyasa, otomasyon_hedef="ev yemeği")
 
     if oyuncu.hijyen < 20:
         print("Otomasyon: Hijyen düşük, duş alınıyor.")
         if "sabun" in oyuncu.envanter:
             return envanter_kullan(oyuncu, override_secim="sabun")
         else:
-            return alisveris_yap(oyuncu, None, None, otomasyon_hedef="sabun")
+            return alisveris_yap(oyuncu, zaman, piyasa, otomasyon_hedef="sabun")
 
-    # Temel ihtiyaçlar karşılandıysa para kazan
-    print("Otomasyon: Temel ihtiyaçlar yerinde, çalışmaya gidiliyor.")
-    return calis(oyuncu)
+    # Enerji yönetimi ve çalışma
+    if oyuncu.enerji < 40:
+        print("Otomasyon: Enerji çalışmak için yetersiz, uyumak gerekiyor.")
+        return uyu(oyuncu)
+    else:
+        # Temel ihtiyaçlar karşılandıysa ve enerji yeterliyse para kazan
+        print("Otomasyon: Temel ihtiyaçlar yerinde ve enerji yeterli, çalışmaya gidiliyor.")
+        return calis(oyuncu)
 
 
 def alisveris_yap(oyuncu, zaman, piyasa, otomasyon_hedef=None):
