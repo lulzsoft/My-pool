@@ -8,59 +8,113 @@ def clear_screen():
     """Ekranı temizler."""
     os.system('cls' if os.name == 'nt' else 'clear')
 
+# Veri yapıları ve yardımcı fonksiyonlar
+ISIM_LISTESI = ["Ali", "Ayşe", "Mehmet", "Fatma", "Hasan", "Zeynep", "Emre", "Elif"]
+SOYISIM_LISTESI = ["Yılmaz", "Kaya", "Demir", "Çelik", "Arslan", "Doğan", "Kurt"]
+DEPARTMANLAR = ["Uretim", "Pazarlama", "Tedarik", "Ar-Ge"]
+
 class Calisan:
-    def __init__(self):
-        self.yetenek = random.randint(5, 15) # 5-15 arası başlangıç yeteneği
+    def __init__(self, departman, seviye=1):
+        self.isim = f"{random.choice(ISIM_LISTESI)} {random.choice(SOYISIM_LISTESI)}"
+        self.departman = departman
+        self.seviye = seviye
         self.moral = 70
-        self.maas = 30 # Standart günlük maaş
+        self.maas = 30 + (seviye * 10) # Seviyeye bağlı maaş
+
+# Ürün reçeteleri
+URUN_RECETELERI = {
+    "elektronik cihaz": {"metal": 2, "silikon": 3, "plastik": 1},
+    "kıyafet": {"tekstil": 5, "plastik": 1}
+}
 
 class Isletme:
     def __init__(self, isim, sermaye, urun_tipi):
         self.isim = isim
         self.sermaye = sermaye
-        self.urun_tipi = urun_tipi # "elektronik", "gıda" vb.
-        self.calisanlar = [Calisan()] # İşletme bir çalışanla başlar (kurucu)
+        self.urun_tipi = urun_tipi
+        self.departmanlar = {dep: [] for dep in DEPARTMANLAR}
+        self.departmanlar["Uretim"].append(Calisan("Uretim", seviye=2)) # Kurucu
         self.musteri_memnuniyeti = 70
+        self.hammadde_envanteri = {"metal": 0, "plastik": 0, "silikon": 0, "tekstil": 0}
+        self.urun_envanteri = 0
+        self.min_stok_seviyesi = 10 # Tedarik departmanı için
         self.ar_ge_seviyesi = 1
-        self.hammadde_envanteri = {"hammadde": 0, "elektronik": 0, "gıda": 0}
-        self.urun_envanteri = 0 # Üretilmiş bitmiş ürün sayısı
 
     @property
     def calisan_sayisi(self):
-        return len(self.calisanlar)
+        return sum(len(calisan_listesi) for calisan_listesi in self.departmanlar.values())
 
-    def gunluk_guncelle(self, piyasa):
-        """İşletmenin günlük üretim, satış ve kar/zarar durumunu günceller."""
-        # Üretim
-        toplam_yetenek = sum(c.yetenek for c in self.calisanlar)
-        uretim_kapasitesi = int((toplam_yetenek / 10) * self.ar_ge_seviyesi)
-        uretilebilecek_miktar = uretim_kapasitesi
+    def get_ortalama_seviye(self, departman):
+        calisan_listesi = self.departmanlar.get(departman, [])
+        if not calisan_listesi:
+            return 0
+        return sum(c.seviye for c in calisan_listesi) / len(calisan_listesi)
 
-        # Gerekli hammaddeleri kontrol et
-        if self.urun_tipi == "elektronik":
-            gerekli_hammadde1 = "hammadde"
-            gerekli_hammadde2 = "elektronik"
-            if self.hammadde_envanteri[gerekli_hammadde1] >= uretim_kapasitesi and self.hammadde_envanteri[gerekli_hammadde2] >= uretim_kapasitesi:
-                self.hammadde_envanteri[gerekli_hammadde1] -= uretim_kapasitesi
-                self.hammadde_envanteri[gerekli_hammadde2] -= uretim_kapasitesi
-                self.urun_envanteri += uretilebilecek_miktar
-                print(f"\n{self.isim}, {uretilebilecek_miktar} adet {self.urun_tipi} üretti.")
-            else:
-                print(f"\nÜretim için yeterli hammadde yok!")
-                uretilebilecek_miktar = 0
+    def tedarik_yap(self, piyasa):
+        """Tedarik departmanı, eksik hammaddeleri otomatik olarak satın alır."""
+        tedarik_seviyesi = self.get_ortalama_seviye("Tedarik")
+        indirim_orani = 1 - (tedarik_seviyesi / 100)
 
-        # Satış
+        for hammadde, miktar in self.hammadde_envanteri.items():
+            if miktar < self.min_stok_seviyesi:
+                ihtiyac = self.min_stok_seviyesi - miktar
+                if hammadde in piyasa.ticari_mallar:
+                    fiyat = piyasa.ticari_mallar[hammadde]["fiyat"] * indirim_orani
+                    toplam_tutar = int(ihtiyac * fiyat)
+
+                    if self.sermaye >= toplam_tutar:
+                        self.sermaye -= toplam_tutar
+                        self.hammadde_envanteri[hammadde] += ihtiyac
+                        print(f"\nTedarik dep. {ihtiyac} adet {hammadde} satın aldı (Tutar: {toplam_tutar} TL).")
+                    else:
+                        print(f"\nTedarik dep. {hammadde} alamadı (Yetersiz sermaye).")
+
+    def uretim_yap(self):
+        """Üretim departmanı, hammaddeleri kullanarak ürün üretir."""
+        uretim_seviyesi = self.get_ortalama_seviye("Uretim")
+        # Ar-Ge seviyesi verimliliğe bonus olarak eklenir. Her Ar-Ge seviyesi %2 verimlilik artışı sağlar.
+        verimlilik_bonusu = 1 + (uretim_seviyesi / 100) + (self.ar_ge_seviyesi / 50)
+
+        recete = URUN_RECETELERI.get(self.urun_tipi)
+        if not recete: return
+
+        uretilebilecek_max_miktar = float('inf')
+        for hammadde, gereken in recete.items():
+            gereken_miktar = gereken / verimlilik_bonusu
+            if self.hammadde_envanteri.get(hammadde, 0) < gereken_miktar:
+                uretilebilecek_max_miktar = 0
+                break
+            if gereken_miktar > 0:
+                uretilebilecek_max_miktar = min(uretilebilecek_max_miktar, self.hammadde_envanteri[hammadde] // gereken_miktar)
+
+        uretilecek_miktar = int(uretilebilecek_max_miktar)
+        if uretilecek_miktar > 0:
+            for hammadde, gereken in recete.items():
+                self.hammadde_envanteri[hammadde] -= int(gereken * uretilecek_miktar / verimlilik_bonusu)
+            self.urun_envanteri += uretilecek_miktar
+            print(f"Üretim dep. {uretilecek_miktar} adet {self.urun_tipi} üretti.")
+
+    def pazarlama_yap(self, piyasa):
+        """Pazarlama departmanı, üretilen ürünleri satar ve net karı döndürür."""
+        pazarlama_seviyesi = self.get_ortalama_seviye("Pazarlama")
+        fiyat_artisi_orani = 1 + (pazarlama_seviyesi / 100)
+
+        gelir = 0
         satilabilecek_miktar = int(self.urun_envanteri * (self.musteri_memnuniyeti / 100))
-        urun_fiyati = piyasa.ticari_mallar[self.urun_tipi]["fiyat"] * 1.5 # %50 kar marjı
-        gelir = satilabilecek_miktar * urun_fiyati
-        self.urun_envanteri -= satilabilecek_miktar
+        if satilabilecek_miktar > 0:
+            urun_fiyati = piyasa.ticari_mallar[self.urun_tipi]["fiyat"] * fiyat_artisi_orani
+            gelir = int(satilabilecek_miktar * urun_fiyati)
+            self.urun_envanteri -= satilabilecek_miktar
+            self.sermaye += gelir
+            print(f"Pazarlama dep. {satilabilecek_miktar} adet ürün sattı (Gelir: {gelir} TL).")
 
-        # Giderler
-        toplam_maas = sum(c.maas for c in self.calisanlar)
-        gider = 50 + toplam_maas # Sabit giderler ve maaşlar
+        # Giderler (sabit ve maaşlar)
+        toplam_maas = sum(c.maas for dep in self.departmanlar.values() for c in dep)
+        gider = 50 + toplam_maas
+        self.sermaye -= gider
 
         net_kar = gelir - gider
-        return int(net_kar)
+        return net_kar
 
 class ZamanSistemi:
     def __init__(self):
@@ -77,31 +131,38 @@ class PiyasaSistemi:
             "emlak": {"fiyat": 5000, "trend": 0.05, "volatilite": 0.2}
         }
         self.ticari_mallar = {
-            "elektronik": {"fiyat": 500, "arz": 100, "talep": 100, "volatilite": 0.3},
-            "gıda": {"fiyat": 50, "arz": 1000, "talep": 1000, "volatilite": 0.1},
-            "hammadde": {"fiyat": 200, "arz": 500, "talep": 500, "volatilite": 0.5}
+            "elektronik cihaz": {"fiyat": 1350, "arz": 100, "talep": 110},
+            "kıyafet": {"fiyat": 480, "arz": 300, "talep": 320},
+            "metal": {"fiyat": 150, "arz": 500, "talep": 500},
+            "plastik": {"fiyat": 40, "arz": 1000, "talep": 1000},
+            "silikon": {"fiyat": 250, "arz": 300, "talep": 300},
+            "tekstil": {"fiyat": 60, "arz": 800, "talep": 800}
         }
+        self.fiyat_gecmisi = {mal: [] for mal in self.ticari_mallar}
 
-    def gunluk_guncelle(self):
-        """Piyasadaki tüm varlıkların fiyatlarını günceller."""
+    def gunluk_guncelle(self, gun):
+        """Piyasadaki tüm varlıkların fiyatlarını günceller ve geçmişi kaydeder."""
+        # Yatırım mallarını güncelle
         for varlik, detaylar in self.yatirim_mallari.items():
-            degisim_yuzdesi = detaylar["trend"] + (random.uniform(-detaylar["volatilite"], detaylar["volatilite"]))
-            eski_fiyat = detaylar["fiyat"]
-            yeni_fiyat = eski_fiyat * (1 + degisim_yuzdesi)
+            degisim_yuzdesi = detaylar["trend"] + (random.uniform(-detaylar.get("volatilite", 0.1), detaylar.get("volatilite", 0.1)))
+            yeni_fiyat = detaylar["fiyat"] * (1 + degisim_yuzdesi)
             self.yatirim_mallari[varlik]["fiyat"] = max(1, int(yeni_fiyat))
 
+        # Ticari malları güncelle ve geçmişi kaydet
         for mal, detaylar in self.ticari_mallar.items():
-            # Arz ve talebi hafifçe dalgalandır
-            detaylar["arz"] += random.randint(-10, 10)
-            detaylar["talep"] += random.randint(-5, 5)
-            detaylar["arz"] = max(10, detaylar["arz"]) # Sıfıra düşmesini engelle
-            detaylar["talep"] = max(10, detaylar["talep"])
+            # Fiyat geçmişini kaydet
+            self.fiyat_gecmisi[mal].append({"gun": gun, "fiyat": detaylar["fiyat"]})
+            if len(self.fiyat_gecmisi[mal]) > 30:
+                self.fiyat_gecmisi[mal].pop(0) # En eski kaydı sil
+
+            # Arz ve talebi dalgalandır
+            detaylar["arz"] = max(10, detaylar["arz"] + random.randint(-10, 10))
+            detaylar["talep"] = max(10, detaylar["talep"] + random.randint(-5, 5))
 
             # Fiyatı arz-talep dengesine göre ayarla
-            fiyat_degisim_orani = (detaylar["talep"] - detaylar["arz"]) / 1000 # Fiyat değişim hassasiyeti
-            fiyat_degisimi = detaylar["fiyat"] * fiyat_degisim_orani
-            yeni_fiyat = detaylar["fiyat"] + fiyat_degisimi
-            self.ticari_mallar[mal]["fiyat"] = max(5, int(yeni_fiyat)) # Min fiyat
+            fiyat_degisim_orani = (detaylar["talep"] - detaylar["arz"]) / 1000
+            yeni_fiyat = detaylar["fiyat"] * (1 + fiyat_degisim_orani)
+            self.ticari_mallar[mal]["fiyat"] = max(5, int(yeni_fiyat))
 
         print("\n--- Piyasa Güncellendi ---")
         time.sleep(1)
@@ -125,8 +186,10 @@ class Oyuncu:
         self.isletme = None # Oyuncunun sahip olduğu işletme
         self.metabolizma_hizi = 1.0
         self.metabolizma_etki_suresi = 0
+        self.gazeteler = [] # Satın alınan gazeteleri saklar
 
 magaza_esyalari = {
+    "gazete": {"fiyat": 25},
     "kitap": {"fiyat": 75, "etki": "zeka", "deger": 5},
     "konsol oyunu": {"fiyat": 200, "etki": "mutluluk", "deger": 15},
     "abur cubur": {"fiyat": 15, "etki": "aclik", "deger": -40, "metabolizma_etkisi": 0.2},
@@ -156,7 +219,7 @@ def main():
     piyasa = PiyasaSistemi()
     while not oyun_bitti:
         durumu_goster(oyuncu, zaman, piyasa)
-        harcanan_saat = eylem_sec(oyuncu, piyasa)
+        harcanan_saat = eylem_sec(oyuncu, zaman, piyasa)
 
         # Zamanı ilerlet
         for _ in range(harcanan_saat):
@@ -165,11 +228,13 @@ def main():
             if zaman.saat >= 24:
                 zaman.saat = 0
                 zaman.gun += 1
-                piyasa.gunluk_guncelle() # Her yeni günde piyasayı güncelle
+                piyasa.gunluk_guncelle(zaman.gun)
                 if oyuncu.isletme:
-                    gunluk_kar = oyuncu.isletme.gunluk_guncelle(piyasa)
-                    oyuncu.para += gunluk_kar
-                    print(f"\nİşletmen bugün {gunluk_kar} TL {'kar' if gunluk_kar >= 0 else 'zarar'} etti.")
+                    oyuncu.isletme.tedarik_yap(piyasa)
+                    oyuncu.isletme.uretim_yap()
+                    net_kar = oyuncu.isletme.pazarlama_yap(piyasa)
+                    oyuncu.para += net_kar
+                    print(f"\nİşletmen bugün {net_kar} TL {'kar' if net_kar >= 0 else 'zarar'} etti.")
                     time.sleep(1)
                 # Yaşlanma kontrolü
                 if zaman.gun % 365 == 0:
@@ -207,26 +272,6 @@ def saati_ilerlet(oyuncu, saat):
         print("\nKarnın gurulduyor, sağlığın ve mutluluğun azalıyor.")
         time.sleep(0.5)
 
-def rastgele_olay(oyuncu):
-    """Her günün sonunda rastgele bir olay tetikler."""
-    olasilik = random.randint(1, 100)
-    if olasilik <= 5: # %5 ihtimal
-        print("\nSürpriz! Yolda 100 TL buldun!")
-        oyuncu.para += 100
-        oyuncu.mutluluk += 10
-        time.sleep(2)
-    elif olasilik <= 10: # %5 ihtimal
-        print("\nKötü haber... Aniden hastalandın ve doktora gitmek zorunda kaldın.")
-        oyuncu.saglik -= 20
-        oyuncu.para -= 50
-        oyuncu.mutluluk -= 15
-        time.sleep(2)
-    elif olasilik <= 15: # %5 ihtimal
-        print("\nBir arkadaşınla karşılaştın ve keyifli bir sohbet ettin.")
-        oyuncu.mutluluk += 15
-        oyuncu.sosyal_beceri += 10
-        time.sleep(2)
-
 def durumu_goster(oyuncu, zaman, piyasa):
     """Oyuncunun anlık durumunu gösterir."""
     clear_screen()
@@ -261,7 +306,7 @@ def durumu_goster(oyuncu, zaman, piyasa):
 
     print("--------------------")
 
-def eylem_sec(oyuncu, piyasa):
+def eylem_sec(oyuncu, zaman, piyasa):
     """Oyuncunun eylem seçmesini sağlar ve sonucu uygular."""
     print("\nNe yapmak istersin?")
     print("1: Çalış")
@@ -275,8 +320,9 @@ def eylem_sec(oyuncu, piyasa):
     print("9: Yatırım Yap")
     print("10: İş Kur / Yönet")
     print("11: Ticaret Yap")
+    print("12: Gazete Oku")
 
-    secim = input("Seçimin (1-11): ")
+    secim = input("Seçimin (1-12): ")
 
     if secim == '1':
         return calis(oyuncu)
@@ -289,7 +335,7 @@ def eylem_sec(oyuncu, piyasa):
     elif secim == '5':
         return spor_yap(oyuncu)
     elif secim == '6':
-        return alisveris_yap(oyuncu)
+        return alisveris_yap(oyuncu, zaman, piyasa)
     elif secim == '7':
         return kitap_oku(oyuncu)
     elif secim == '8':
@@ -297,18 +343,17 @@ def eylem_sec(oyuncu, piyasa):
     elif secim == '9':
         return yatirim_yap(oyuncu, piyasa)
     elif secim == '10':
-        if oyuncu.isletme is None:
-            return is_kur(oyuncu)
-        else:
-            return isletmeyi_yonet(oyuncu, piyasa)
+        return is_kur(oyuncu) if oyuncu.isletme is None else isletmeyi_yonet(oyuncu, piyasa)
     elif secim == '11':
         return ticaret_yap(oyuncu, piyasa)
+    elif secim == '12':
+        return gazete_oku(oyuncu)
     else:
         print("Geçersiz seçim. 1 saatin boşa geçti.")
         time.sleep(1)
-        return 1 # Geçersiz seçim 1 saat harcar
+        return 1
 
-def alisveris_yap(oyuncu):
+def alisveris_yap(oyuncu, zaman, piyasa):
     """Alışveriş yapma eylemi."""
     print("\n--- MAĞAZA ---")
     for i, (esya, detaylar) in enumerate(magaza_esyalari.items()):
@@ -324,14 +369,20 @@ def alisveris_yap(oyuncu):
 
         if oyuncu.para >= secilen_esya['fiyat']:
             oyuncu.para -= secilen_esya['fiyat']
-            oyuncu.envanter.append(secilen_esya_adi)
-            print(f"{secilen_esya_adi.capitalize()} satın aldın.")
+            if secilen_esya_adi == "gazete":
+                import copy
+                yeni_gazete = {"gun": zaman.gun, "fiyat_gecmisi": copy.deepcopy(piyasa.fiyat_gecmisi)}
+                oyuncu.gazeteler.append(yeni_gazete)
+                print(f"Gün {zaman.gun} tarihli gazete satın aldın.")
+            else:
+                oyuncu.envanter.append(secilen_esya_adi)
+                print(f"{secilen_esya_adi.capitalize()} satın aldın.")
         else:
             print("Yeterli paran yok.")
     except (ValueError, IndexError):
         print("Geçersiz seçim.")
     time.sleep(2)
-    return 1 # Alışveriş 1 saat sürer
+    return 1
 
 def kitap_oku(oyuncu):
     """Kitap okuma eylemi."""
@@ -340,7 +391,7 @@ def kitap_oku(oyuncu):
         oyuncu.zeka = min(100, oyuncu.zeka + magaza_esyalari["kitap"]["deger"])
         oyuncu.enerji -= 5
         oyuncu.mutluluk += 5
-        oyuncu.envanter.remove("kitap") # Kitap okunduktan sonra kaybolur
+        oyuncu.envanter.remove("kitap")
         time.sleep(2)
         return 1
     else:
@@ -366,18 +417,17 @@ def envanter_kullan(oyuncu):
 
         secilen_esya_adi = oyuncu.envanter[secim - 1]
         esya_detay = magaza_esyalari[secilen_esya_adi]
-
-        etki_alani = esya_detay['etki']
+        etki_alani = esya_detay.get('etki')
+        if not etki_alani:
+            print("Bu eşyanın bir etkisi yok.")
+            return 1
         deger = esya_detay['deger']
-
-        # setattr kullanarak oyuncunun ilgili özelliğini dinamik olarak güncelliyoruz
         mevcut_deger = getattr(oyuncu, etki_alani)
         setattr(oyuncu, etki_alani, min(100, max(0, mevcut_deger + deger)))
 
-        # Metabolizma etkisini uygula
         if "metabolizma_etkisi" in esya_detay:
             oyuncu.metabolizma_hizi = 1.0 + esya_detay["metabolizma_etkisi"]
-            oyuncu.metabolizma_etki_suresi = 4 # Etki 4 saat sürer
+            oyuncu.metabolizma_etki_suresi = 4
             print(f"Yediğin yiyecek metabolizmanı etkiledi! Mevcut hız: {oyuncu.metabolizma_hizi}x")
 
         print(f"{secilen_esya_adi.capitalize()} kullandın. {etki_alani.capitalize()} {deger} değişti.")
@@ -386,10 +436,14 @@ def envanter_kullan(oyuncu):
     except (ValueError, IndexError):
         print("Geçersiz seçim.")
     time.sleep(2)
-    return 1 # Envanter kullanımı 1 saat sürer
+    return 1
 
 def calis(oyuncu):
     """Çalışma eylemi."""
+    if oyuncu.isletme:
+        print("Kendi işinin patronusun, 'İşletmeyi Yönet' seçeneğini kullan.")
+        time.sleep(2)
+        return 1
     if oyuncu.enerji >= 40:
         saat = 8
         kazanc_per_saat = 10 + (oyuncu.zeka // 10) + (oyuncu.is_emegi // 10)
@@ -400,9 +454,8 @@ def calis(oyuncu):
         oyuncu.mutluluk -= 15
         oyuncu.is_emegi += saat
 
-        if oyuncu.is_emegi >= 200: # Terfi için gereken tecrübe
+        if oyuncu.is_emegi >= 200:
             print("\nTebrikler! Terfi aldın! Saatlik ücretin arttı.")
-            # Burada daha karmaşık terfi mekanikleri eklenebilir.
 
         time.sleep(2)
         return saat
@@ -414,9 +467,9 @@ def calis(oyuncu):
 def uyu(oyuncu):
     """Uyuma eylemi."""
     saat = int(input("Kaç saat uyumak istersin? (1-10): "))
-    saat = max(1, min(10, saat)) # 1 ile 10 saat arası sınırla
+    saat = max(1, min(10, saat))
     print(f"{saat} saat uyudun.")
-    oyuncu.enerji = min(100, oyuncu.enerji + saat * 8) # Saatte 8 enerji
+    oyuncu.enerji = min(100, oyuncu.enerji + saat * 8)
     time.sleep(2)
     return saat
 
@@ -494,7 +547,6 @@ def yatirim_yap(oyuncu, piyasa):
                 print(f"{adet} adet {secilen_varlik_adi.replace('_', ' ').title()} satın aldın.")
             else:
                 print("Yeterli paran yok.")
-
         except (ValueError, IndexError):
             print("Geçersiz seçim.")
 
@@ -512,7 +564,6 @@ def yatirim_yap(oyuncu, piyasa):
             try:
                 varlik_secim = int(input(f"Ne satmak istersin? (1-{len(portfoy_listesi)}): "))
                 adet_satis = int(input("Kaç adet satmak istersin?: "))
-
                 secilen_varlik_adi = portfoy_listesi[varlik_secim - 1]
 
                 if adet_satis <= oyuncu.portfoy[secilen_varlik_adi]:
@@ -525,24 +576,25 @@ def yatirim_yap(oyuncu, piyasa):
                     print(f"{adet_satis} adet {secilen_varlik_adi.replace('_', ' ').title()} sattın ve {toplam_kazanc} TL kazandın.")
                 else:
                     print("Elinde o kadar varlık yok.")
-
             except (ValueError, IndexError):
                 print("Geçersiz seçim.")
 
     time.sleep(2)
-    return 2 # Yatırım işlemi 2 saat sürer
+    return 2
 
 def is_kur(oyuncu):
     """Yeni bir iş kurma eylemi."""
     kurulum_maliyeti = 2500
     print(f"\nKendi işini kurmak için gereken başlangıç sermayesi {kurulum_maliyeti} TL.")
     print("Hangi alanda bir iş kurmak istersin?")
-    # Şimdilik sadece elektronik üretimi mevcut, gelecekte genişletilebilir.
-    print("1: Elektronik")
-    secim = input("Seçimin (1): ")
+    urun_tipleri = list(URUN_RECETELERI.keys())
+    for i, urun in enumerate(urun_tipleri):
+        print(f"{i+1}: {urun.capitalize()} Üretimi")
 
-    if secim == '1':
-        urun_tipi = "elektronik"
+    try:
+        secim = int(input(f"Seçimin (1-{len(urun_tipleri)}): "))
+        urun_tipi = urun_tipleri[secim - 1]
+
         if oyuncu.para >= kurulum_maliyeti:
             isletme_ismi = input("İşletmenin adı ne olsun?: ")
             oyuncu.para -= kurulum_maliyeti
@@ -550,23 +602,23 @@ def is_kur(oyuncu):
             print(f"Tebrikler! '{isletme_ismi}' adında bir {urun_tipi} şirketi kurdun.")
         else:
             print("Yeterli paran yok.")
-    else:
+    except (ValueError, IndexError):
         print("Geçersiz seçim.")
     time.sleep(2)
-    return 3 # İş kurma planlaması 3 saat sürer
+    return 3
 
 def isletmeyi_yonet(oyuncu, piyasa):
     """Mevcut işletmeyi yönetme eylemi."""
     isletme = oyuncu.isletme
     print(f"\n--- {isletme.isim.upper()} YÖNETİM PANELİ ---")
-    print(f"Sermaye: {isletme.sermaye} TL | Çalışanlar: {isletme.calisan_sayisi} | Müşteri Memnuniyeti: {isletme.musteri_memnuniyeti}%")
+    print(f"Sermaye: {isletme.sermaye} TL | Çalışanlar: {isletme.calisan_sayisi} | Müşteri Memnuniyeti: {isletme.musteri_memnuniyeti}% | Ar-Ge Seviyesi: {isletme.ar_ge_seviyesi}")
     hammadde_str = ", ".join([f"{k.capitalize()}: {v}" for k, v in isletme.hammadde_envanteri.items() if v > 0])
     print(f"Hammadde Envanteri: {hammadde_str if hammadde_str else 'Boş'}")
     print(f"Ürün Envanteri: {isletme.urun_envanteri} adet {isletme.urun_tipi}")
     print("-" * 20)
     print("--- İNSAN KAYNAKLARI ---")
     print("1: Çalışanları Listele")
-    print("2: Çalışan İşe Al (Maliyet: 500 TL)")
+    print("2: Çalışan İşe Al")
     print("3: Çalışan Kov")
     print("4: Çalışanlara Eğitim Ver (Maliyet: 1000 TL)")
     print("5: Sosyal Etkinlik Düzenle (Maliyet: 750 TL)")
@@ -582,40 +634,79 @@ def isletmeyi_yonet(oyuncu, piyasa):
 
     if secim == '1':
         print("\n--- ÇALIŞAN LİSTESİ ---")
-        for i, calisan in enumerate(isletme.calisanlar):
-            print(f"Çalışan {i+1}: Yetenek: {calisan.yetenek}, Moral: {calisan.moral}, Maaş: {calisan.maas} TL")
+        for dep, calisan_listesi in isletme.departmanlar.items():
+            if calisan_listesi:
+                print(f"\n-- {dep} Departmanı (Ort. Seviye: {isletme.get_ortalama_seviye(dep):.2f}) --")
+                for calisan in calisan_listesi:
+                    print(f"  - {calisan.isim} (Seviye: {calisan.seviye}, Maaş: {calisan.maas}, Moral: {calisan.moral})")
 
     elif secim == '2':
-        if oyuncu.para >= 500:
-            oyuncu.para -= 500
-            isletme.calisanlar.append(Calisan())
-            print("Yeni bir çalışan işe aldın.")
-        else:
-            print("İşe alım maliyeti için yeterli paran yok.")
+        print("Hangi departmana alım yapmak istersin?")
+        for i, dep in enumerate(DEPARTMANLAR):
+            print(f"{i+1}: {dep}")
+        try:
+            dep_secim = int(input(f"Seçimin (1-{len(DEPARTMANLAR)}): "))
+            adet = int(input("Kaç kişi işe almak istersin?: "))
+            departman = DEPARTMANLAR[dep_secim - 1]
+
+            adaylar = [Calisan(departman, seviye=random.randint(1,5)) for _ in range(adet + 2)] # Fazladan aday
+            print("\n--- ADAY LİSTESİ ---")
+            for i, aday in enumerate(adaylar):
+                print(f"{i+1}: {aday.isim} (Seviye: {aday.seviye}, Maaş: {aday.maas})")
+
+            ise_alinacaklar_str = input("İşe almak istediğin adayların numaralarını virgülle ayırarak yaz (örn: 1,3): ")
+            if ise_alinacaklar_str:
+                for idx_str in ise_alinacaklar_str.split(','):
+                    idx = int(idx_str.strip()) - 1
+                    if 0 <= idx < len(adaylar):
+                        maliyet = 500 + adaylar[idx].maas # İşe alım maliyeti + ilk maaş
+                        if isletme.sermaye >= maliyet:
+                            isletme.sermaye -= maliyet
+                            isletme.departmanlar[departman].append(adaylar[idx])
+                            print(f"{adaylar[idx].isim}, {departman} departmanına katıldı.")
+                        else:
+                            print(f"{adaylar[idx].isim} için yeterli sermaye yok.")
+        except (ValueError, IndexError):
+            print("Geçersiz seçim.")
 
     elif secim == '3':
-        if isletme.calisan_sayisi > 1:
-            # Şimdilik en kötü çalışanı kovar (en düşük yetenekli)
-            isletme.calisanlar.sort(key=lambda c: c.yetenek)
-            isletme.calisanlar.pop(0)
-            print("En düşük yetenekli çalışan işten çıkarıldı.")
+        calisanlar = []
+        for dep, calisan_listesi in isletme.departmanlar.items():
+            for calisan in calisan_listesi:
+                calisanlar.append((dep, calisan))
+
+        if not calisanlar:
+            print("Kovacak çalışan yok.")
         else:
-            print("Tek çalışanı kovamazsın, o sensin!")
+            print("\n--- ÇALIŞAN KOV ---")
+            for i, (dep, calisan) in enumerate(calisanlar):
+                print(f"{i+1}: {calisan.isim} ({dep}) - Seviye: {calisan.seviye}")
+
+            try:
+                secim_kov = int(input(f"Kimi kovmak istersin? (1-{len(calisanlar)}), çıkmak için 0): "))
+                if secim_kov > 0:
+                    dep, calisan_to_fire = calisanlar[secim_kov - 1]
+                    isletme.departmanlar[dep].remove(calisan_to_fire)
+                    print(f"{calisan_to_fire.isim} işten çıkarıldı.")
+            except (ValueError, IndexError):
+                print("Geçersiz seçim.")
 
     elif secim == '4':
         if isletme.sermaye >= 1000:
             isletme.sermaye -= 1000
-            for calisan in isletme.calisanlar:
-                calisan.yetenek += random.randint(1, 3)
-            print("Tüm çalışanlara eğitim verildi, yetenekleri arttı.")
+            for dep in isletme.departmanlar.values():
+                for calisan in dep:
+                    calisan.seviye += random.randint(1, 2)
+            print("Tüm çalışanlara eğitim verildi, seviyeleri arttı.")
         else:
             print("Eğitim için işletmenin yeterli sermayesi yok.")
 
     elif secim == '5':
         if isletme.sermaye >= 750:
             isletme.sermaye -= 750
-            for calisan in isletme.calisanlar:
-                calisan.moral = min(100, calisan.moral + 15)
+            for dep in isletme.departmanlar.values():
+                for calisan in dep:
+                    calisan.moral = min(100, calisan.moral + 15)
             print("Sosyal etkinlik düzenlendi, çalışanların morali yükseldi.")
         else:
             print("Etkinlik için işletmenin yeterli sermayesi yok.")
@@ -633,45 +724,51 @@ def isletmeyi_yonet(oyuncu, piyasa):
             print("Geçersiz miktar.")
 
     elif secim == '7':
-        if oyuncu.para >= 300:
-            oyuncu.para -= 300
+        if isletme.sermaye >= 300:
+            isletme.sermaye -= 300
             isletme.musteri_memnuniyeti = min(100, isletme.musteri_memnuniyeti + 15)
             print("Pazarlama kampanyası müşteri memnuniyetini artırdı.")
         else:
-            print("Pazarlama için yeterli paran yok.")
+            print("Pazarlama için işletmenin yeterli sermayesi yok.")
 
     elif secim == '8':
-        print("\n--- HAMMADDE PAZARI ---")
-        for i, (mal, detaylar) in enumerate(piyasa.ticari_mallar.items()):
-            print(f"{i+1}: {mal.capitalize()} - {detaylar['fiyat']} TL")
+        print("\n--- HAMMADDE SATIN AL ---")
+        hammadde_listesi = list(isletme.hammadde_envanteri.keys())
+        for i, hammadde in enumerate(hammadde_listesi):
+            fiyat = piyasa.ticari_mallar[hammadde]['fiyat']
+            print(f"{i+1}: {hammadde.capitalize()} - {fiyat} TL")
 
         try:
-            mal_secim = int(input(f"Ne almak istersin? (1-{len(piyasa.ticari_mallar)}): "))
+            secim_h = int(input(f"Ne almak istersin? (1-{len(hammadde_listesi)}): "))
             adet = int(input("Kaç adet almak istersin?: "))
 
-            secilen_mal_adi = list(piyasa.ticari_mallar.keys())[mal_secim - 1]
-            fiyat = piyasa.ticari_mallar[secilen_mal_adi]['fiyat']
+            secilen_hammadde = hammadde_listesi[secim_h - 1]
+            fiyat = piyasa.ticari_mallar[secilen_hammadde]['fiyat']
             toplam_tutar = fiyat * adet
 
             if isletme.sermaye >= toplam_tutar:
                 isletme.sermaye -= toplam_tutar
-                isletme.hammadde_envanteri[secilen_mal_adi] = isletme.hammadde_envanteri.get(secilen_mal_adi, 0) + adet
-                print(f"İşletme için {adet} adet {secilen_mal_adi.capitalize()} satın aldın.")
+                isletme.hammadde_envanteri[secilen_hammadde] += adet
+                print(f"{adet} adet {secilen_hammadde.capitalize()} satın alındı.")
             else:
                 print("İşletmenin yeterli sermayesi yok.")
         except (ValueError, IndexError):
             print("Geçersiz seçim.")
 
     elif secim == '9':
-        if isletme.sermaye >= 2000:
-            isletme.sermaye -= 2000
-            isletme.ar_ge_seviyesi += 1
-            print(f"Ar-Ge yatırımı yapıldı! İşletmenin teknoloji seviyesi {isletme.ar_ge_seviyesi}'e yükseldi.")
-        else:
-            print("Ar-Ge yatırımı için işletmenin yeterli sermayesi yok.")
+        maliyet = 2000 * isletme.ar_ge_seviyesi
+        print(f"Mevcut Ar-Ge Seviyesi: {isletme.ar_ge_seviyesi}. Bir sonraki seviye için yatırım maliyeti: {maliyet} TL.")
+        onay = input("Yatırım yapmak istiyor musun? (e/h): ").lower()
+        if onay == 'e':
+            if isletme.sermaye >= maliyet:
+                isletme.sermaye -= maliyet
+                isletme.ar_ge_seviyesi += 1
+                print(f"Ar-Ge yatırımı yapıldı! Yeni Ar-Ge Seviyesi: {isletme.ar_ge_seviyesi}.")
+            else:
+                print("Yatırım için işletmenin yeterli sermayesi yok.")
 
     elif secim == '10':
-        satis_degeri = isletme.sermaye # Basit hesaplama, daha sonra detaylandırılabilir
+        satis_degeri = isletme.sermaye # Basit hesaplama
         print(f"İşletmenin tahmini satış değeri: {satis_degeri} TL.")
         onay = input("İşletmeyi bu fiyata satmak istediğine emin misin? (e/h): ").lower()
         if onay == 'e':
@@ -680,7 +777,7 @@ def isletmeyi_yonet(oyuncu, piyasa):
             print("İşletmeyi başarıyla sattın!")
 
     time.sleep(2)
-    return 4 # Yönetim 4 saat sürer
+    return 4
 
 def ticaret_yap(oyuncu, piyasa):
     """Ticari mal alıp satma eylemi."""
@@ -689,33 +786,39 @@ def ticaret_yap(oyuncu, piyasa):
     print("2: Mal Sat")
     secim = input("Ne yapmak istersin? (1-2), çıkmak için 0): ")
 
-    # Zeka ve sosyal beceriye dayalı bonuslar
-    zeka_bonusu = 1 - (oyuncu.zeka / 500) # Max %20 indirim
-    sosyal_beceri_bonusu = 1 + (oyuncu.sosyal_beceri / 500) # Max %20 zam
+    if secim == '0':
+        return 1 # Eylem iptal edildi, 1 saat harcandı
 
     if secim == '1':
-        print("\n--- PİYASA (MAL ALIM) ---")
+        print("\n--- PİYASA (ALIM) ---")
+        mal_listesi = list(piyasa.ticari_mallar.keys())
         for i, (mal, detaylar) in enumerate(piyasa.ticari_mallar.items()):
-            uygulanacak_fiyat = int(detaylar['fiyat'] * zeka_bonusu)
-            print(f"{i+1}: {mal.capitalize()} - {uygulanacak_fiyat} TL (Piyasa: {detaylar['fiyat']} TL)")
+            print(f"{i+1}: {mal.capitalize()} - {detaylar['fiyat']} TL")
 
         try:
-            mal_secim = int(input(f"Ne almak istersin? (1-{len(piyasa.ticari_mallar)}): "))
-            adet = int(input("Kaç adet almak istersin?: "))
+            mal_secim_str = input(f"Ne almak istersin? (1-{len(mal_listesi)}): ")
+            if not mal_secim_str: return 1
+            mal_secim = int(mal_secim_str)
 
-            secilen_mal_adi = list(piyasa.ticari_mallar.keys())[mal_secim - 1]
-            fiyat = int(piyasa.ticari_mallar[secilen_mal_adi]['fiyat'] * zeka_bonusu)
-            lojistik_maliyeti = adet * 2 # Birim başına 2 TL taşıma maliyeti
-            toplam_tutar = (fiyat * adet) + lojistik_maliyeti
+            adet_str = input("Kaç adet almak istersin?: ")
+            if not adet_str: return 1
+            adet = int(adet_str)
+
+            if adet <= 0:
+                print("Geçersiz adet.")
+                time.sleep(2)
+                return 2
+
+            secilen_mal_adi = mal_listesi[mal_secim - 1]
+            fiyat = piyasa.ticari_mallar[secilen_mal_adi]['fiyat']
+            toplam_tutar = fiyat * adet
 
             if oyuncu.para >= toplam_tutar:
                 oyuncu.para -= toplam_tutar
                 oyuncu.ticari_envanter[secilen_mal_adi] = oyuncu.ticari_envanter.get(secilen_mal_adi, 0) + adet
-                piyasa.ticari_mallar[secilen_mal_adi]['talep'] += adet / 10 # Alım talebi artırır
-                print(f"{adet} adet {secilen_mal_adi.capitalize()} satın aldın. Lojistik Maliyeti: {lojistik_maliyeti} TL.")
+                print(f"{adet} adet {secilen_mal_adi.capitalize()} satın aldın.")
             else:
                 print("Yeterli paran yok.")
-
         except (ValueError, IndexError):
             print("Geçersiz seçim.")
 
@@ -723,38 +826,81 @@ def ticaret_yap(oyuncu, piyasa):
         if not oyuncu.ticari_envanter:
             print("Satacak hiçbir ticari malın yok.")
         else:
-            print("\n--- TİCARİ ENVANTER (MAL SATIM) ---")
+            print("\n--- TİCARİ ENVANTER (SATIM) ---")
             envanter_listesi = list(oyuncu.ticari_envanter.keys())
             for i, mal in enumerate(envanter_listesi):
                 adet = oyuncu.ticari_envanter[mal]
-                piyasa_fiyati = piyasa.ticari_mallar[mal]['fiyat']
-                uygulanacak_fiyat = int(piyasa_fiyati * sosyal_beceri_bonusu)
-                print(f"{i+1}: {mal.capitalize()} ({adet} adet) - Satış Fiyatı: {uygulanacak_fiyat} TL (Piyasa: {piyasa_fiyati} TL)")
+                mevcut_fiyat = piyasa.ticari_mallar[mal]['fiyat']
+                print(f"{i+1}: {mal.capitalize()} ({adet} adet) - Mevcut Fiyat: {mevcut_fiyat} TL")
 
             try:
-                mal_secim = int(input(f"Ne satmak istersin? (1-{len(envanter_listesi)}): "))
-                adet_satis = int(input("Kaç adet satmak istersin?: "))
+                mal_secim_str = input(f"Ne satmak istersin? (1-{len(envanter_listesi)}): ")
+                if not mal_secim_str: return 1
+                mal_secim = int(mal_secim_str)
+
+                adet_satis_str = input("Kaç adet satmak istersin?: ")
+                if not adet_satis_str: return 1
+                adet_satis = int(adet_satis_str)
+
+                if adet_satis <= 0:
+                    print("Geçersiz adet.")
+                    time.sleep(2)
+                    return 2
 
                 secilen_mal_adi = envanter_listesi[mal_secim - 1]
 
-                if adet_satis <= oyuncu.ticari_envanter[secilen_mal_adi]:
-                    fiyat = int(piyasa.ticari_mallar[secilen_mal_adi]['fiyat'] * sosyal_beceri_bonusu)
+                if adet_satis <= oyuncu.ticari_envanter.get(secilen_mal_adi, 0):
+                    fiyat = piyasa.ticari_mallar[secilen_mal_adi]['fiyat']
                     toplam_kazanc = fiyat * adet_satis
                     oyuncu.para += toplam_kazanc
                     oyuncu.ticari_envanter[secilen_mal_adi] -= adet_satis
                     if oyuncu.ticari_envanter[secilen_mal_adi] == 0:
                         del oyuncu.ticari_envanter[secilen_mal_adi]
-                    piyasa.ticari_mallar[secilen_mal_adi]['arz'] += adet_satis / 10 # Satım arzı artırır
                     print(f"{adet_satis} adet {secilen_mal_adi.capitalize()} sattın ve {toplam_kazanc} TL kazandın.")
                 else:
                     print("Elinde o kadar mal yok.")
-
             except (ValueError, IndexError):
                 print("Geçersiz seçim.")
+    else:
+        print("Geçersiz seçim.")
 
     time.sleep(2)
-    return 3 # Ticaret 3 saat sürer
+    return 2
 
+def gazete_oku(oyuncu):
+    """Satın alınmış bir gazeteyi okuma eylemi."""
+    if not oyuncu.gazeteler:
+        print("Okuyacak hiç gazeten yok.")
+        time.sleep(2)
+        return 1
+
+    print("\n--- GAZETELERİN ---")
+    for i, gazete in enumerate(oyuncu.gazeteler):
+        print(f"{i+1}: Gün {gazete['gun']} Tarihli Gazete")
+
+    try:
+        secim = int(input(f"Hangi gazeteyi okumak istersin? (1-{len(oyuncu.gazeteler)}), çıkmak için 0): "))
+        if secim == 0:
+            return 1
+
+        secilen_gazete = oyuncu.gazeteler[secim - 1]
+        print(f"\n--- GÜN {secilen_gazete['gun']} PİYASA BÜLTENİ ---")
+        for mal, gecmis_veriler in secilen_gazete['fiyat_gecmisi'].items():
+            print(f"\n--- {mal.capitalize()} ---")
+            if not gecmis_veriler:
+                print("Veri yok.")
+            else:
+                for veri in gecmis_veriler:
+                    print(f"  Gün {veri['gun']}: {veri['fiyat']} TL")
+
+        oyuncu.gazeteler.pop(secim - 1)
+        print("\nGazeteyi okuduktan sonra attın.")
+
+    except (ValueError, IndexError):
+        print("Geçersiz seçim.")
+
+    input("\nDevam etmek için Enter'a bas...")
+    return 1
 
 if __name__ == "__main__":
     main()
