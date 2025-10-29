@@ -175,3 +175,34 @@ class YapayZeka:
         # Keşif oranını zamanla azalt
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_azalma
+
+    def kaydet(self, dosya_yolu="ai_tecrube.npy"):
+        """
+        Modelin ağırlıklarını, sapmalarını ve epsilon değerini bir dosyaya kaydeder.
+        """
+        kaydedilecek_veriler = {
+            "W1": self.W1, "b1": self.b1,
+            "W2": self.W2, "b2": self.b2,
+            "W3": self.W3, "b3": self.b3,
+            "W4": self.W4, "b4": self.b4,
+            "epsilon": self.epsilon
+        }
+        np.save(dosya_yolu, kaydedilecek_veriler)
+        print(f"\n--- AI tecrübesi {dosya_yolu} dosyasına kaydedildi. ---")
+
+    def yukle(self, dosya_yolu="ai_tecrube.npy"):
+        """
+        Daha önce kaydedilmiş model ağırlıklarını, sapmalarını ve epsilon değerini yükler.
+        """
+        try:
+            veriler = np.load(dosya_yolu, allow_pickle=True).item()
+            self.W1, self.b1 = veriler["W1"], veriler["b1"]
+            self.W2, self.b2 = veriler["W2"], veriler["b2"]
+            self.W3, self.b3 = veriler["W3"], veriler["b3"]
+            self.W4, self.b4 = veriler["W4"], veriler["b4"]
+            self.epsilon = veriler["epsilon"]
+            print(f"--- Kayıtlı AI tecrübesi {dosya_yolu} dosyasından yüklendi. ---")
+        except FileNotFoundError:
+            print("--- Kayıtlı AI tecrübe dosyası bulunamadı, yeni bir başlangıç yapılıyor. ---")
+        except Exception as e:
+            print(f"AI tecrübesi yüklenirken bir hata oluştu: {e}")
