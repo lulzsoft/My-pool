@@ -9,6 +9,7 @@ def clear_screen():
     os.system('cls' if os.name == 'nt' else 'clear')
 
 from varliklar import Oyuncu, Isletme, Calisan, NPC, Konum, Kariyer, Ev, ZamanSistemi, PiyasaSistemi, TrafikSistemi
+from yapay_zeka import YapayZeka
 import veri
 
 # Ulaşım ve Konum Sistemi
@@ -130,10 +131,63 @@ def zaman_etkilerini_isle(oyuncu, zaman, piyasa, gecen_dakika, gecen_gun_sayisi)
             if zaman.gun % 3 == 0:
                 emlak_ilanlarini_guncelle()
 
+def yapay_zeka_eylem_yonetici(oyuncu, zaman, piyasa, trafik, karar):
+    """
+    Yapay zekanın verdiği kararı yorumlar, gerekli koşulları kontrol eder
+    (örn: konum değiştirme) ve ilgili eylemi tetikler.
+    """
+    print(f"\n>>> AI Kararı: {karar}")
+    time.sleep(1)
+
+    # Eylem ve gerektirdiği konum eşleşmesi
+    eylem_konum_map = {
+        'Çalış': "Sanayi Bölgesi",
+        'Yemek Ye': "Şehir Merkezi", # Markete gitmek için
+        'Temizlen': "Ev",
+        'Eğitim Al': "Şehir Merkezi",
+        'Uyu': "Ev",
+        'Kitap Oku': "Ev",
+    }
+
+    # Eylem ve fonksiyon eşleşmesi
+    eylem_fonksiyon_map = {
+        'Çalış': calis,
+        'Yemek Ye': lambda o,z,p,t: alisveris_yap(o, z, p, otomasyon_hedef="ev yemeği"),
+        'Temizlen': lambda o,z,p,t: envanter_kullan(o, override_secim="sabun"),
+        'Eğitim Al': okula_git,
+        'Uyu': uyu,
+        'Kitap Oku': kitap_oku,
+    }
+
+    hedef_konum = eylem_konum_map.get(karar)
+
+    # 1. Adım: Konum kontrolü ve gerekirse ulaşım
+    if hedef_konum and oyuncu.mevcut_konum.ad != hedef_konum:
+        print(f"'{karar}' eylemi için '{hedef_konum}' konumuna gidiliyor...")
+        time.sleep(1)
+        # Hedef konumu bul ve oraya git
+        diger_konumlar = [k for k, v in KONUMLAR.items() if v.ad != oyuncu.mevcut_konum.ad]
+        if hedef_konum in diger_konumlar:
+            return ulasim_yap(oyuncu, zaman, trafik, hedef_konum_adi=hedef_konum)
+        else:
+            print("Hata: Hedef konum bulunamadı.")
+            return 10 # Hata durumunda zamanı biraz ilerlet
+
+    # 2. Adım: Eylemi gerçekleştir
+    if karar in eylem_fonksiyon_map:
+        fonksiyon = eylem_fonksiyon_map[karar]
+        # Bazi fonksiyonlarin argumanlari farkli, bu yuzden lambda ile sarmaladik
+        return fonksiyon(oyuncu, zaman, piyasa, trafik)
+    else:
+        print(f"Bilinmeyen AI kararı: {karar}")
+        return 10
+
+
 def main():
     """Ana oyun fonksiyonu."""
     clear_screen()
-    isim = input("Karakterinizin ismini girin: ")
+    # isim = input("Karakterinizin ismini girin: ")
+    isim = "Yapay Zeka"
     oyuncu = Oyuncu(isim, KONUMLAR["Ev"])
 
     aile_isim = f"{random.choice(veri.ISIM_LISTESI)} {random.choice(veri.SOYISIM_LISTESI)}"
@@ -144,32 +198,23 @@ def main():
     emlak_ilanlarini_guncelle()
     yapay_zeka_sirketlerini_olustur()
 
-    print(f"\n{oyuncu.isim} adında yeni bir hayata başlıyun!")
+    print(f"\n{oyuncu.isim} adında yeni bir hayata başlıyor!")
     time.sleep(2)
 
     oyun_bitti = False
     zaman = ZamanSistemi()
     piyasa = PiyasaSistemi()
     trafik = TrafikSistemi()
+    yapay_zeka = YapayZeka() # Yapay zeka nesnesini oluştur
 
     while not oyun_bitti:
         durumu_goster(oyuncu, zaman, piyasa)
 
-        harcanacak_dakika = 0
-        if oyuncu.otomasyon_modu:
-            yanit = input("Otomasyon devrede... Devam etmek için Enter'a basın veya 'kapat' yazarak modu durdurun: ")
-            if yanit.lower() == 'kapat':
-                oyuncu.otomasyon_modu = False
-                print("Otomasyon modu kapatıldı.")
-                time.sleep(1)
-            else:
-                harcanacak_dakika = otomasyonu_calistir(oyuncu, zaman, piyasa, trafik)
-        else:
-            komut = input("\nZamanın akması için Enter'a bas, bir eylem seçmek için 'eylem' yaz: ").lower()
-            if komut == 'eylem':
-                harcanacak_dakika = eylem_sec(oyuncu, zaman, piyasa, trafik)
-            else:
-                harcanacak_dakika = 10 # Zamanı 10 dakika ilerlet
+        # Karar verme aşaması
+        ai_karari = yapay_zeka.karar_ver(oyuncu, zaman)
+
+        # Kararı uygulama ve harcanacak zamanı alma
+        harcanacak_dakika = yapay_zeka_eylem_yonetici(oyuncu, zaman, piyasa, trafik, ai_karari)
 
         # Zamanı ilerlet ve etkileri işle
         if harcanacak_dakika > 0:
@@ -177,10 +222,16 @@ def main():
             zaman.zaman_ilerlet(harcanacak_dakika)
             gecen_gun_sayisi = zaman.gun - onceki_gun
             zaman_etkilerini_isle(oyuncu, zaman, piyasa, harcanacak_dakika, gecen_gun_sayisi)
+        else:
+            # Eylem başarısız olduysa veya zaman harcamadıysa, döngünün takılmaması için zamanı biraz ilerlet
+            zaman.zaman_ilerlet(10)
+
 
         if oyuncu.saglik <= 0:
             oyun_bitti = True
             print("\nSağlığın tükendi ve hayatını kaybettin. Oyun bitti.")
+
+        time.sleep(2) # Simülasyonu yavaşlatarak takip etmeyi kolaylaştır
 
 
 def bar_gostergesi_olustur(label, deger, max_deger=100, uzunluk=10):
@@ -459,7 +510,7 @@ def emlakciya_git(oyuncu):
     return 120
 
 
-def ulasim_yap(oyuncu, zaman, trafik, otomasyon_modu=False):
+def ulasim_yap(oyuncu, zaman, trafik, otomasyon_modu=False, hedef_konum_adi=None):
     """Farklı konumlar arasında dinamik trafik yoğunluğuna göre seyahat etme eylemi."""
     print("\n--- ULAŞIM ---")
     diger_konumlar = [k for k, v in KONUMLAR.items() if v.ad != oyuncu.mevcut_konum.ad]
@@ -474,13 +525,14 @@ def ulasim_yap(oyuncu, zaman, trafik, otomasyon_modu=False):
     }
 
     try:
-        hedef_secim_str = input(f"Nereye gitmek istersin? (1-{len(diger_konumlar)}): ")
-        if not hedef_secim_str: return 10
-        hedef_secim = int(hedef_secim_str)
-        hedef_konum_adi = diger_konumlar[hedef_secim - 1]
+        if hedef_konum_adi is None:
+             hedef_secim_str = input(f"Nereye gitmek istersin? (1-{len(diger_konumlar)}): ")
+             if not hedef_secim_str: return 10
+             hedef_secim = int(hedef_secim_str)
+             hedef_konum_adi = diger_konumlar[hedef_secim - 1]
 
-        if otomasyon_modu:
-            arac_secim = "1" # Otomasyon her zaman en ucuzunu seçer
+        if otomasyon_modu or hedef_konum_adi:
+            arac_secim = "1" # Otomasyon veya AI her zaman en ucuzunu seçer
         else:
             print("\nNasıl seyahat etmek istersin?")
             for i, (arac, detay) in enumerate(ulasim_secenekleri.items()):
@@ -652,8 +704,13 @@ def alisveris_yap(oyuncu, zaman, piyasa, otomasyon_hedef=None):
     time.sleep(2)
     return 60
 
-def kitap_oku(oyuncu):
+def kitap_oku(oyuncu, zaman, piyasa, *args, **kwargs):
     """Kitap okuma eylemi."""
+    if "kitap" not in oyuncu.envanter:
+        # Kitap yoksa, otomatik olarak satın almayı dene
+        print("AI: Okuyacak kitap yok, marketten alınıyor...")
+        return alisveris_yap(oyuncu, zaman, piyasa, otomasyon_hedef="kitap")
+
     if "kitap" in oyuncu.envanter:
         print("1 saat kitap okuyarak zekanı geliştirdin.")
         oyuncu.zeka = min(100, oyuncu.zeka + veri.MAGAZA_ESYALARI["kitap"]["deger"])
@@ -663,6 +720,7 @@ def kitap_oku(oyuncu):
         time.sleep(2)
         return 60
     else:
+        # Bu kısım yukarıdaki kontrol nedeniyle artık ulaşılamaz, ancak güvenlik için kalabilir.
         print("Okuyacak bir kitabın yok. 1 saatin boşa geçti.")
         time.sleep(2)
         return 60
@@ -715,7 +773,7 @@ def envanter_kullan(oyuncu, override_secim=None):
     time.sleep(2)
     return 60
 
-def calis(oyuncu):
+def calis(oyuncu, *args, **kwargs):
     """İşe giderek para kazanma ve tecrübe edinme eylemi."""
     if oyuncu.hastalik:
         print(f"Hastayken işe gidemezsin! Önce iyileşmelisin.")
@@ -763,18 +821,9 @@ def calis(oyuncu):
         time.sleep(2)
         return 60
 
-def uyu(oyuncu):
-    """Uyuma eylemi."""
-    if oyuncu.otomasyon_modu:
-        saat = 8
-    else:
-        try:
-            saat_str = input("Kaç saat uyumak istersin? (1-10): ")
-            saat = int(saat_str) if saat_str else 8
-        except ValueError:
-            saat = 8
-
-    saat = max(1, min(10, saat))
+def uyu(oyuncu, *args, **kwargs):
+    """Uyuma eylemi. AI kontrolünde her zaman 8 saat uyur."""
+    saat = 8
     print(f"{saat} saat uyudun.")
     oyuncu.enerji = min(100, oyuncu.enerji + saat * 8)
     time.sleep(2)
@@ -795,7 +844,7 @@ def eglen(oyuncu):
         time.sleep(2)
         return 60
 
-def okula_git(oyuncu):
+def okula_git(oyuncu, *args, **kwargs):
     """Okula gitme ve üniversite eğitimi alma eylemi."""
     UNIVERSITE_SURESI = 1460 # 4 oyun yılı
     ZEKA_GEREKSINIMI = 80
@@ -828,12 +877,8 @@ def okula_git(oyuncu):
             return 60
 
     else: # Henüz üniversiteye başlamamış
-        print("\n--- EĞİTİM SEÇENEKLERİ ---")
-        print("1: Okula Git (Zeka artırır)")
-        if oyuncu.zeka >= ZEKA_GEREKSINIMI:
-            print(f"2: Üniversiteye Başla (Gereksinim: {ZEKA_GEREKSINIMI} Zeka)")
-
-        secim = input("Seçimin: ")
+        # AI her zaman temel okula gitmeyi seçer
+        secim = '1'
         if secim == '1':
             if oyuncu.enerji >= 20 and oyuncu.para >= 50:
                 print("Okula gidip 4 saat ders çalıştın.")
