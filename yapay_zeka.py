@@ -8,7 +8,7 @@ class YapayZeka:
     yöntemini kullanan bir sinir ağı modeli. Model, zamanla aldığı ödül ve cezalara
     göre kendini geliştirir.
     """
-    def __init__(self, girdi_boyutu=6, gizli_katman_boyutu=100, cikti_boyutu=7):
+    def __init__(self, girdi_boyutu=6, gizli_katman_boyutu=100, cikti_boyutu=14):
         """
         Sinir ağını ve öğrenme parametrelerini başlatır.
         """
@@ -37,7 +37,12 @@ class YapayZeka:
         self.epsilon_min = 0.01    # Minimum keşif oranı
 
         # Olası eylemlerin listesi (çıktı nöronlarına karşılık gelir)
-        self.eylemler = ['Çalış', 'Yemek Ye', 'Uyu', 'Temizlen', 'Eğitim Al', 'Kitap Oku', 'İş Kur/Yönet']
+        self.eylemler = [
+            'Çalış', 'Uyu', 'Eğitim Al', 'Kitap Oku', 'İş Kur/Yönet',
+            'Alışveriş Yap', 'Spor Yap', 'Eğlen', 'Hastaneye Git',
+            'İş Piyasası', 'Emlakçıya Git', 'Sosyal Etkileşime Gir',
+            'Ticaret Yap', 'Yatırım Yap'
+        ]
 
         # Geri yayılım için ara katmanların çıktılarının saklanması
         self.a1, self.a2, self.a3 = None, None, None

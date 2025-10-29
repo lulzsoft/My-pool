@@ -65,6 +65,18 @@ def emlak_ilanlarini_guncelle():
     time.sleep(1)
 
 
+def gunluk_loglari_yaz(gun, loglar):
+    """Günlük aktiviteleri log dosyasına yazar."""
+    if not loglar:
+        return
+    # Dosyanın var olup olmadığını kontrol etmeden 'a' modunda açmak, yoksa oluşturur.
+    with open("gunluk_aktivite.log", "a", encoding="utf-8") as f:
+        f.write(f"\n--- GÜN {gun} AKTİVİTELERİ ---\n")
+        for log in loglar:
+            f.write(log + "\n")
+    print(f"--- Gün {gun} aktiviteleri gunluk_aktivite.log dosyasına yazıldı. ---")
+
+
 def zaman_etkilerini_isle(oyuncu, zaman, piyasa, gecen_dakika, gecen_gun_sayisi):
     """Geçen süre boyunca oyuncu ve dünya üzerindeki etkileri işler."""
     if gecen_dakika <= 0:
@@ -132,6 +144,7 @@ def zaman_etkilerini_isle(oyuncu, zaman, piyasa, gecen_dakika, gecen_gun_sayisi)
             if zaman.gun % 3 == 0:
                 emlak_ilanlarini_guncelle()
 
+
 def yapay_zeka_eylem_yonetici(oyuncu, zaman, piyasa, trafik, karar):
     """
     Yapay zekanın verdiği kararı yorumlar, gerekli koşulları kontrol eder
@@ -143,23 +156,40 @@ def yapay_zeka_eylem_yonetici(oyuncu, zaman, piyasa, trafik, karar):
     # Eylem ve gerektirdiği konum eşleşmesi
     eylem_konum_map = {
         'Çalış': "Sanayi Bölgesi",
-        'Yemek Ye': "Şehir Merkezi", # Markete gitmek için
+        'Alışveriş Yap': "Şehir Merkezi",
         'Temizlen': "Ev",
         'Eğitim Al': "Şehir Merkezi",
         'Uyu': "Ev",
         'Kitap Oku': "Ev",
         'İş Kur/Yönet': "Sanayi Bölgesi",
+        'Spor Yap': "Ev",
+        'Eğlen': "Ev",
+        'Hastaneye Git': "Şehir Merkezi",
+        'İş Piyasası': "Şehir Merkezi",
+        'Emlakçıya Git': "Şehir Merkezi",
+        'Sosyal Etkileşime Gir': "Şehir Merkezi",
+        'Ticaret Yap': "Sanayi Bölgesi",
+        'Yatırım Yap': "Şehir Merkezi" # Varsayılan olarak yatırım bankası merkezde
     }
 
     # Eylem ve fonksiyon eşleşmesi
     eylem_fonksiyon_map = {
         'Çalış': calis,
-        'Yemek Ye': lambda o,z,p,t: alisveris_yap(o, z, p, otomasyon_hedef="ev yemeği"),
-        'Temizlen': lambda o,z,p,t: envanter_kullan(o, override_secim="sabun"),
-        'Eğitim Al': okula_git,
         'Uyu': uyu,
+        'Eğitim Al': okula_git,
         'Kitap Oku': kitap_oku,
         'İş Kur/Yönet': lambda o, z, p, t: is_kur(o, ai_kontrol=True) if o.isletme is None else isletmeyi_yonet(o, p, ai_kontrol=True),
+        'Alışveriş Yap': lambda o, z, p, t: alisveris_yap(o, z, p, otomasyon_hedef="ev yemeği" if o.aclik > 60 else ("sabun" if o.hijyen < 40 else "kitap")),
+        'Spor Yap': lambda o, z, p, t: spor_yap(o),
+        'Eğlen': lambda o, z, p, t: eglen(o),
+        'Hastaneye Git': lambda o, z, p, t: hastaneye_git(o, ai_kontrol=True),
+        'İş Piyasası': lambda o, z, p, t: is_piyasasi(o, ai_kontrol=True),
+        'Emlakçıya Git': lambda o, z, p, t: emlakciya_git(o, ai_kontrol=True),
+        'Sosyal Etkileşime Gir': lambda o, z, p, t: sosyal_etkilesim(o, ai_kontrol=True),
+        'Ticaret Yap': lambda o, z, p, t: ticaret_yap(o, p, ai_kontrol=True),
+        'Yatırım Yap': lambda o, z, p, t: yatirim_yap(o, p, ai_kontrol=True),
+        # Eski 'Yemek Ye' ve 'Temizlen' eylemleri artık 'Alışveriş Yap' ve 'Envanteri Kullan' altında yönetiliyor.
+        # AI önce satın almalı, sonra kullanmalı. Kullanma eylemi şimdilik AI tarafından doğrudan seçilemez.
     }
 
     hedef_konum = eylem_konum_map.get(karar)
@@ -209,6 +239,7 @@ def main():
     piyasa = PiyasaSistemi()
     trafik = TrafikSistemi()
     yapay_zeka = YapayZeka() # Yapay zeka nesnesini oluştur
+    main.gunluk_aktiviteler = []
 
     while not oyun_bitti:
         durumu_goster(oyuncu, zaman, piyasa)
@@ -223,6 +254,12 @@ def main():
         # 2. Karar Ver
         eylem_index, ai_karari = yapay_zeka.karar_ver(mevcut_durum_kopya, mevcut_zaman_kopya)
 
+        # Loglama: Eylem kararı loglanır
+        log_mesaji = (f"[{zaman}] Eylem: {ai_karari} - "
+                      f"Sağlık: {int(oyuncu.saglik)}, Mutluluk: {int(oyuncu.mutluluk)}, "
+                      f"Enerji: {int(oyuncu.enerji)}, Para: {oyuncu.para} TL")
+        main.gunluk_aktiviteler.append(log_mesaji)
+
         # 3. Eylemi Gerçekleştir ve Zamanı İlerlet
         harcanacak_dakika = yapay_zeka_eylem_yonetici(oyuncu, zaman, piyasa, trafik, ai_karari)
         if harcanacak_dakika > 0:
@@ -230,6 +267,11 @@ def main():
             zaman.zaman_ilerlet(harcanacak_dakika)
             gecen_gun_sayisi = zaman.gun - onceki_gun
             zaman_etkilerini_isle(oyuncu, zaman, piyasa, harcanacak_dakika, gecen_gun_sayisi)
+
+            # Loglama: Gün değiştiyse logları yaz
+            if gecen_gun_sayisi > 0:
+                gunluk_loglari_yaz(onceki_gun, main.gunluk_aktiviteler)
+                main.gunluk_aktiviteler.clear()
         else:
             # Eylem başarısız olduysa veya zaman harcamadıysa, döngünün takılmaması için zamanı biraz ilerlet
             zaman.zaman_ilerlet(10)
@@ -258,28 +300,42 @@ def odul_hesapla(onceki_durum, mevcut_durum, yapilan_eylem):
     """
     odul = 0
 
-    # Para değişiklikleri
+    # Para değişiklikleri (kazanmak her zaman iyidir)
     para_farki = mevcut_durum.para - onceki_durum.para
-    if para_farki > 0:
-        odul += 1 # Para kazandı
+    if para_farki > 50: # Küçük alım satımları değil, gerçek kazancı ödüllendir
+        odul += 5
 
     # Stat değişiklikleri
-    if mevcut_durum.saglik > onceki_durum.saglik or mevcut_durum.mutluluk > onceki_durum.mutluluk:
-        odul += 2 # Sağlık veya mutluluk arttı
+    if mevcut_durum.saglik > onceki_durum.saglik:
+        odul += 10 # Sağlığın artması çok önemli
+    if mevcut_durum.mutluluk > onceki_durum.mutluluk:
+        odul += 5 # Mutluluğun artması önemli
+    if mevcut_durum.enerji > onceki_durum.enerji:
+        odul += 3 # Enerjinin artması iyi
 
-    # Cezalar
-    if mevcut_durum.aclik > 70:
-        odul -= 5
-    if mevcut_durum.saglik < 40 or mevcut_durum.mutluluk < 40 or mevcut_durum.enerji < 40:
-        odul -= 5
+    # Cezalar (daha sert cezalar)
+    if mevcut_durum.aclik > 80:
+        odul -= 10
+    if mevcut_durum.saglik < 30:
+        odul -= 15
+    if mevcut_durum.mutluluk < 30 or mevcut_durum.enerji < 20:
+        odul -= 10
     if mevcut_durum.saglik <= 0:
-        odul -= 100 # En büyük ceza
+        odul -= 200 # En büyük ceza
 
     # Eyleme özel ödüller
-    if yapilan_eylem in ['Eğitim Al', 'Kitap Oku']:
-        odul += 5
-    # Şirket kurma eylemi burada direkt kontrol edilemez, ancak dolaylı olarak para kazanma ile ödüllendirilir.
-    # Bu daha sonra geliştirilebilir.
+    if yapilan_eylem == 'Hastaneye Git' and onceki_durum.hastalik is not None:
+        odul += 20  # Hastayken hastaneye gitmek büyük ödül!
+    elif yapilan_eylem == 'Hastaneye Git' and onceki_durum.hastalik is None:
+        odul -= 10 # Sağlıklıyken hastaneye gitmek anlamsız
+
+    if yapilan_eylem in ['Eğitim Al', 'Kitap Oku', 'Spor Yap']:
+        odul += 7 # Kendini geliştirmek her zaman iyidir
+    if yapilan_eylem in ['Sosyal Etkileşime Gir', 'Eğlen']:
+        odul += 4 # Sosyalleşmek ve eğlenmek de önemli
+    if yapilan_eylem in ['İş Kur/Yönet', 'Emlakçıya Git', 'Yatırım Yap', 'Ticaret Yap']:
+        odul += 3 # Finansal okuryazarlık ve girişimcilik
+
 
     return odul
 
@@ -342,11 +398,17 @@ def durumu_goster(oyuncu, zaman, piyasa):
 
     print("--------------------")
 
-def is_piyasasi(oyuncu):
+def is_piyasasi(oyuncu, *args, **kwargs):
     """İş piyasası menüsünü yönetir, iş bulma ve işten ayrılma işlemleri."""
+    ai_kontrol = kwargs.get('ai_kontrol', False)
     print("\n--- İŞ PİYASASI ---")
 
     if oyuncu.is_durumu["kariyer"]:
+        # AI şimdilik işinden ayrılmaz, bu oyuncuya özel bir eylem
+        if ai_kontrol:
+            print("AI zaten bir işte çalışıyor, başka bir eylem deneyecek.")
+            return 10 # Kısa zaman harca
+
         kariyer = oyuncu.is_durumu["kariyer"]
         seviye_bilgisi = kariyer.get_seviye_bilgisi(oyuncu.is_durumu["seviye"])
         print(f"Mevcut İşin: {seviye_bilgisi['unvan']} ({kariyer.ad})")
@@ -358,44 +420,48 @@ def is_piyasasi(oyuncu):
         time.sleep(2)
         return 60
 
-    else:
-        print("Mevcut İş İlanları:")
-        uygun_isler = []
-        for ad, kariyer in veri.KARİYERLER.items():
-            if (kariyer.diploma_gereksinimi and oyuncu.diploma) or not kariyer.diploma_gereksinimi:
-                uygun_isler.append(kariyer)
+    else: # İşsiz ise
+        uygun_isler = [k for k in veri.KARİYERLER.values() if (k.diploma_gereksinimi and oyuncu.diploma) or not k.diploma_gereksinimi]
 
         if not uygun_isler:
             print("Sana uygun hiç iş ilanı yok.")
+            time.sleep(2)
+            return 60
+
+        secilen_kariyer = None
+        if ai_kontrol:
+            secilen_kariyer = uygun_isler[0] # AI her zaman bulduğu ilk işe başvurur
+            print(f"AI, '{secilen_kariyer.ad}' işine başvuruyor...")
         else:
+            print("Mevcut İş İlanları:")
             for i, kariyer in enumerate(uygun_isler):
                 baslangic_maasi = kariyer.get_seviye_bilgisi(1)["maas"] * 8
                 print(f"{i+1}: {kariyer.ad} (Başlangıç Günlük Maaş: {baslangic_maasi} TL)")
-
             try:
                 secim_is = int(input(f"Başvurmak istediğin işin numarasını gir (1-{len(uygun_isler)}): "))
                 if 0 < secim_is <= len(uygun_isler):
                     secilen_kariyer = uygun_isler[secim_is - 1]
-                    # Mülakat simülasyonu (basit rastgele şans)
-                    if random.random() < 0.75: # %75 işe alınma şansı
-                        print(f"Tebrikler! '{secilen_kariyer.ad}' olarak işe alındın.")
-                        oyuncu.is_durumu["kariyer"] = secilen_kariyer
-                        oyuncu.is_durumu["seviye"] = 1
-                        oyuncu.is_durumu["tecrube"] = 0
-                    else:
-                        print("Mülakat başarısız oldu, işe alınmadın.")
-                        oyuncu.mutluluk -= 10
-                else:
-                    print("Geçersiz seçim.")
             except (ValueError, IndexError):
                 print("Geçersiz seçim.")
+
+        if secilen_kariyer:
+            # Mülakat simülasyonu
+            if random.random() < 0.75:
+                print(f"Tebrikler! '{secilen_kariyer.ad}' olarak işe alındın.")
+                oyuncu.is_durumu["kariyer"] = secilen_kariyer
+                oyuncu.is_durumu["seviye"] = 1
+                oyuncu.is_durumu["tecrube"] = 0
+            else:
+                print("Mülakat başarısız oldu, işe alınmadın.")
+                oyuncu.mutluluk -= 10
 
         time.sleep(3)
         return 120
 
 
-def hastaneye_git(oyuncu):
+def hastaneye_git(oyuncu, *args, **kwargs):
     """Hastaneye giderek hastalıkları tedavi etme eylemi."""
+    ai_kontrol = kwargs.get('ai_kontrol', False)
     print("\n--- HASTANE ---")
     if not oyuncu.hastalik:
         print("Herhangi bir hastalığın yok.")
@@ -405,7 +471,7 @@ def hastaneye_git(oyuncu):
     tedavi_ucreti = 200
     print(f"'{oyuncu.hastalik}' için tedavi ücreti: {tedavi_ucreti} TL.")
     if oyuncu.para >= tedavi_ucreti:
-        onay = input("Tedavi olmak istiyor musun? (e/h): ").lower()
+        onay = 'e' if ai_kontrol else input("Tedavi olmak istiyor musun? (e/h): ").lower()
         if onay == 'e':
             oyuncu.para -= tedavi_ucreti
             oyuncu.hastalik = None
@@ -418,145 +484,190 @@ def hastaneye_git(oyuncu):
     return 180
 
 
-def sosyal_etkilesim(oyuncu):
+def sosyal_etkilesim(oyuncu, *args, **kwargs):
     """NPC'lerle sosyal etkileşim menüsünü yönetir."""
+    ai_kontrol = kwargs.get('ai_kontrol', False)
     print("\n--- SOSYAL ETKİLEŞİM ---")
     if not oyuncu.iliskiler:
         print("Etkileşime girecek kimsen yok.")
         time.sleep(2)
         return 60
 
-    for i, npc in enumerate(oyuncu.iliskiler):
-        print(f"{i+1}: {npc.isim} ({npc.iliski_turu})")
+    secilen_npc = None
+    if ai_kontrol:
+        secilen_npc = random.choice(oyuncu.iliskiler)
+    else:
+        for i, npc in enumerate(oyuncu.iliskiler):
+            print(f"{i+1}: {npc.isim} ({npc.iliski_turu})")
+        try:
+            secim_npc = int(input(f"Kiminle etkileşime girmek istersin? (1-{len(oyuncu.iliskiler)}): "))
+            if 0 < secim_npc <= len(oyuncu.iliskiler):
+                secilen_npc = oyuncu.iliskiler[secim_npc - 1]
+        except (ValueError, IndexError):
+            print("Geçersiz seçim.")
+            time.sleep(2)
+            return 60
 
-    try:
-        secim_npc = int(input(f"Kiminle etkileşime girmek istersin? (1-{len(oyuncu.iliskiler)}): "))
-        if 0 < secim_npc <= len(oyuncu.iliskiler):
-            secilen_npc = oyuncu.iliskiler[secim_npc - 1]
+    if secilen_npc:
+        secim_eylem = ''
+        if ai_kontrol:
+            secim_eylem = '1' # AI her zaman en basit eylemi seçer: Sohbet Et
+        else:
             print(f"\n{secilen_npc.isim} ile ne yapmak istersin?")
             print("1: Sohbet Et (İlişki +2, Mutluluk +5)")
             print("2: Hediye Al (50 TL) (İlişki +10)")
             print("3: Birlikte Vakit Geçir (3 Saat, 100 TL) (İlişki +15, Mutluluk +20)")
-
             secim_eylem = input("Seçimin: ")
-            if secim_eylem == '1':
-                secilen_npc.iliski_seviyesi = min(100, secilen_npc.iliski_seviyesi + 2)
-                oyuncu.mutluluk = min(100, oyuncu.mutluluk + 5)
-                print(f"{secilen_npc.isim} ile sohbet ettin.")
-                return 60
-            elif secim_eylem == '2' and oyuncu.para >= 50:
-                oyuncu.para -= 50
-                secilen_npc.iliski_seviyesi = min(100, secilen_npc.iliski_seviyesi + 10)
-                print(f"{secilen_npc.isim}'a hediye aldın.")
-                return 60
-            elif secim_eylem == '3' and oyuncu.para >= 100:
-                oyuncu.para -= 100
-                secilen_npc.iliski_seviyesi = min(100, secilen_npc.iliski_seviyesi + 15)
-                oyuncu.mutluluk = min(100, oyuncu.mutluluk + 20)
-                print(f"{secilen_npc.isim} ile 3 saat vakit geçirdin.")
-                return 180
-            else:
-                print("Geçersiz eylem veya yetersiz para.")
-                return 60
-    except (ValueError, IndexError):
-        print("Geçersiz seçim.")
+
+        if secim_eylem == '1':
+            secilen_npc.iliski_seviyesi = min(100, secilen_npc.iliski_seviyesi + 2)
+            oyuncu.mutluluk = min(100, oyuncu.mutluluk + 5)
+            print(f"{secilen_npc.isim} ile sohbet ettin.")
+            return 60
+        elif secim_eylem == '2' and oyuncu.para >= 50:
+            oyuncu.para -= 50
+            secilen_npc.iliski_seviyesi = min(100, secilen_npc.iliski_seviyesi + 10)
+            print(f"{secilen_npc.isim}'a hediye aldın.")
+            return 60
+        elif secim_eylem == '3' and oyuncu.para >= 100:
+            oyuncu.para -= 100
+            secilen_npc.iliski_seviyesi = min(100, secilen_npc.iliski_seviyesi + 15)
+            oyuncu.mutluluk = min(100, oyuncu.mutluluk + 20)
+            print(f"{secilen_npc.isim} ile 3 saat vakit geçirdin.")
+            return 180
+        else:
+            print("Geçersiz eylem veya yetersiz para.")
+            return 60
 
     time.sleep(2)
     return 60
 
 
-def emlakciya_git(oyuncu):
+def emlakciya_git(oyuncu, *args, **kwargs):
     """Emlakçıya giderek ev alım satım ve yönetim işlemlerini yapar."""
+    ai_kontrol = kwargs.get('ai_kontrol', False)
     print("\n--- EMLAKÇI ---")
-    print("1: Satılık İlanları Görüntüle")
-    print("2: Sahip Olduğun Evleri Yönet")
-    print("3: Ev Sat")
 
-    secim = input("Ne yapmak istersin? (1-3), çıkmak için 0): ")
+    secim = ''
+    if ai_kontrol:
+        # AI Mantığı: Eğer evi yoksa ve parası yetiyorsa en ucuz evi al. Varsa ve tamirliyse satmayı dene.
+        if not oyuncu.sahip_olunan_evler and emlak_ilanlari:
+            secim = '1' # Al
+        elif oyuncu.sahip_olunan_evler:
+            tamirli_ev_var = any(False not in ev.eksiklikler.values() for ev in oyuncu.sahip_olunan_evler)
+            if tamirli_ev_var:
+                secim = '3' # Sat
+            else:
+                secim = '2' # Yönet (tamir et)
+    else:
+        print("1: Satılık İlanları Görüntüle")
+        print("2: Sahip Olduğun Evleri Yönet")
+        print("3: Ev Sat")
+        secim = input("Ne yapmak istersin? (1-3), çıkmak için 0): ")
 
-    if secim == '1':
+
+    if secim == '1': # SATIN AL
         if not emlak_ilanlari:
             print("Şu anda hiç satılık ev ilanı yok.")
         else:
-            print("\n--- SATILIK EV İLANLARI ---")
-            for i, ev in enumerate(emlak_ilanlari):
-                print(f"{i+1}: {ev.tip} ({ev.metrekare} m²) - Fiyat: {ev.alis_fiyati} TL")
+            secilen_ev = None
+            if ai_kontrol:
+                # En ucuz evi bul
+                en_ucuz_ev = min(emlak_ilanlari, key=lambda ev: ev.alis_fiyati)
+                if oyuncu.para >= en_ucuz_ev.alis_fiyati:
+                    secilen_ev = en_ucuz_ev
+                    print(f"AI, en ucuz ev olan '{secilen_ev.tip}' ilanını {secilen_ev.alis_fiyati} TL'ye satın almayı düşünüyor.")
+            else: # Manuel
+                print("\n--- SATILIK EV İLANLARI ---")
+                for i, ev in enumerate(emlak_ilanlari):
+                    print(f"{i+1}: {ev.tip} ({ev.metrekare} m²) - Fiyat: {ev.alis_fiyati} TL")
+                try:
+                    secim_ev = int(input(f"Satın almak istediğin evin numarasını gir (1-{len(emlak_ilanlari)}), çıkmak için 0): "))
+                    if secim_ev > 0:
+                        secilen_ev = emlak_ilanlari[secim_ev - 1]
+                except (ValueError, IndexError):
+                    print("Geçersiz seçim.")
 
-            try:
-                secim_ev = int(input(f"Satın almak istediğin evin numarasını gir (1-{len(emlak_ilanlari)}), çıkmak için 0): "))
-                if secim_ev > 0:
-                    secilen_ev = emlak_ilanlari[secim_ev - 1]
-                    if oyuncu.para >= secilen_ev.alis_fiyati:
-                        oyuncu.para -= secilen_ev.alis_fiyati
-                        oyuncu.sahip_olunan_evler.append(secilen_ev)
-                        emlak_ilanlari.pop(secim_ev - 1)
-                        print(f"Tebrikler! {secilen_ev.tip} satın aldın.")
-                    else:
-                        print("Bu evi almak için yeterli paran yok.")
-            except (ValueError, IndexError):
-                print("Geçersiz seçim.")
+            if secilen_ev and oyuncu.para >= secilen_ev.alis_fiyati:
+                oyuncu.para -= secilen_ev.alis_fiyati
+                oyuncu.sahip_olunan_evler.append(secilen_ev)
+                emlak_ilanlari.remove(secilen_ev)
+                print(f"Tebrikler! {secilen_ev.tip} satın aldın.")
+            elif secilen_ev:
+                print("Bu evi almak için yeterli paran yok.")
 
-    elif secim == '2':
+
+    elif secim == '2': # YÖNET (TAMİR ET)
         if not oyuncu.sahip_olunan_evler:
             print("Yönetilecek hiç evin yok.")
         else:
-            print("\n--- EVLERİNİ YÖNET ---")
-            for i, ev in enumerate(oyuncu.sahip_olunan_evler):
-                print(f"{i+1}: {ev}")
+            secilen_ev = None
+            if ai_kontrol:
+                 # AI, tamir edilecek ilk evi seçer
+                for ev in oyuncu.sahip_olunan_evler:
+                    if False in ev.eksiklikler.values():
+                        secilen_ev = ev
+                        break
+            else: # Manuel
+                print("\n--- EVLERİNİ YÖNET ---")
+                for i, ev in enumerate(oyuncu.sahip_olunan_evler):
+                    print(f"{i+1}: {ev}")
+                try:
+                    secim_yonet = int(input(f"Yönetmek istediğin evin numarasını gir (1-{len(oyuncu.sahip_olunan_evler)}): "))
+                    if secim_yonet > 0:
+                        secilen_ev = oyuncu.sahip_olunan_evler[secim_yonet - 1]
+                except (ValueError, IndexError):
+                    print("Geçersiz seçim.")
 
-            try:
-                secim_yonet = int(input(f"Yönetmek istediğin evin numarasını gir (1-{len(oyuncu.sahip_olunan_evler)}): "))
-                if secim_yonet > 0:
-                    secilen_ev = oyuncu.sahip_olunan_evler[secim_yonet - 1]
-                    print(f"\n--- {secilen_ev.tip} Yönetimi ---")
-                    print("Eksiklikler:")
-                    tamir_edilecekler = []
-                    for eksik, durum in secilen_ev.eksiklikler.items():
-                        durum_str = "Tamir Edilmiş" if durum else "Tamir Bekliyor"
-                        maliyet = veri.EV_EKSİKLİKLERİ[eksik]["maliyet"]
-                        print(f" - {eksik}: {durum_str} (Maliyet: {maliyet} TL)")
-                        if not durum:
-                            tamir_edilecekler.append(eksik)
+            if secilen_ev:
+                tamir_edilecekler = [eksik for eksik, durum in secilen_ev.eksiklikler.items() if not durum]
+                if not tamir_edilecekler:
+                    print("Bu evde tamir edilecek bir şey yok.")
+                else:
+                    toplam_maliyet = sum(veri.EV_EKSİKLİKLERİ[e]["maliyet"] for e in tamir_edilecekler)
+                    print(f"Toplam tamir maliyeti: {toplam_maliyet} TL.")
+                    onay = 'e' if ai_kontrol else input("Bu evdeki tüm eksiklikleri tamir ettirmek istiyor musun? (e/h): ").lower()
+                    if onay == 'e':
+                        if oyuncu.para >= toplam_maliyet:
+                            oyuncu.para -= toplam_maliyet
+                            for eksik in tamir_edilecekler:
+                                secilen_ev.eksiklikler[eksik] = True
+                            print("Usta çağrıldı ve tüm eksiklikler giderildi!")
+                        else:
+                            print("Tamir için yeterli paran yok.")
 
-                    if not tamir_edilecekler:
-                        print("Bu evde tamir edilecek bir şey yok.")
-                    else:
-                        onay = input("Bu evdeki tüm eksiklikleri tamir ettirmek istiyor musun? (e/h): ").lower()
-                        if onay == 'e':
-                            toplam_maliyet = sum(veri.EV_EKSİKLİKLERİ[e]["maliyet"] for e in tamir_edilecekler)
-                            print(f"Toplam tamir maliyeti: {toplam_maliyet} TL.")
-                            if oyuncu.para >= toplam_maliyet:
-                                oyuncu.para -= toplam_maliyet
-                                for eksik in tamir_edilecekler:
-                                    secilen_ev.eksiklikler[eksik] = True
-                                print("Usta çağrıldı ve tüm eksiklikler giderildi!")
-                            else:
-                                print("Tamir için yeterli paran yok.")
-            except (ValueError, IndexError):
-                print("Geçersiz seçim.")
-
-    elif secim == '3':
+    elif secim == '3': # SAT
         if not oyuncu.sahip_olunan_evler:
             print("Satacak hiç evin yok.")
         else:
-            print("\n--- EV SAT ---")
-            for i, ev in enumerate(oyuncu.sahip_olunan_evler):
-                print(f"{i+1}: {ev} - Potansiyel Satış Fiyatı: {ev.satis_fiyati} TL")
+            satilacak_ev = None
+            if ai_kontrol:
+                # AI, satılabilecek (tamamen tamir edilmiş) ilk evi satar
+                for ev in oyuncu.sahip_olunan_evler:
+                    if False not in ev.eksiklikler.values():
+                        satilacak_ev = ev
+                        break
+            else: # Manuel
+                print("\n--- EV SAT ---")
+                for i, ev in enumerate(oyuncu.sahip_olunan_evler):
+                    print(f"{i+1}: {ev} - Potansiyel Satış Fiyatı: {ev.satis_fiyati} TL")
+                try:
+                    secim_sat = int(input(f"Satmak istediğin evin numarasını gir (1-{len(oyuncu.sahip_olunan_evler)}): "))
+                    if secim_sat > 0:
+                        satilacak_ev = oyuncu.sahip_olunan_evler[secim_sat - 1]
+                except (ValueError, IndexError):
+                    print("Geçersiz seçim.")
 
-            try:
-                secim_sat = int(input(f"Satmak istediğin evin numarasını gir (1-{len(oyuncu.sahip_olunan_evler)}): "))
-                if secim_sat > 0:
-                    satilacak_ev = oyuncu.sahip_olunan_evler[secim_sat - 1]
-                    if False in satilacak_ev.eksiklikler.values():
-                        print("Bu evi satamazsın! Önce tüm eksiklikleri tamir etmelisin.")
-                    else:
-                        oyuncu.para += satilacak_ev.satis_fiyati
-                        oyuncu.sahip_olunan_evler.pop(secim_sat - 1)
-                        print(f"{satilacak_ev.tip} satıldı ve {satilacak_ev.satis_fiyati} TL kazandın!")
-            except (ValueError, IndexError):
-                print("Geçersiz seçim.")
+            if satilacak_ev:
+                if False in satilacak_ev.eksiklikler.values():
+                    print("Bu evi satamazsın! Önce tüm eksiklikleri tamir etmelisin.")
+                else:
+                    oyuncu.para += satilacak_ev.satis_fiyati
+                    oyuncu.sahip_olunan_evler.remove(satilacak_ev)
+                    print(f"{satilacak_ev.tip} satıldı ve {satilacak_ev.satis_fiyati} TL kazandın!")
 
-    input("\nDevam etmek için Enter'a bas...")
+    if not ai_kontrol:
+        input("\nDevam etmek için Enter'a bas...")
     return 120
 
 
@@ -966,51 +1077,79 @@ def spor_yap(oyuncu):
         time.sleep(2)
         return 60
 
-def yatirim_yap(oyuncu, piyasa):
+def yatirim_yap(oyuncu, piyasa, *args, **kwargs):
     """Yatırım yapma eylemi."""
+    ai_kontrol = kwargs.get('ai_kontrol', False)
     print("\n--- YATIRIM MERKEZİ ---")
-    print("1: Varlık Al")
-    print("2: Varlık Sat")
-    secim = input("Ne yapmak istersin? (1-2), çıkmak için 0): ")
 
-    if secim == '1':
-        print("\n--- PİYASA (ALIM) ---")
-        for i, (varlik, detaylar) in enumerate(piyasa.yatirim_mallari.items()):
-            print(f"{i+1}: {varlik.replace('_', ' ').title()} - {detaylar['fiyat']} TL")
+    secim = ''
+    if ai_kontrol:
+        secim = '2' if oyuncu.portfoy else '1'
+    else:
+        print("1: Varlık Al")
+        print("2: Varlık Sat")
+        secim = input("Ne yapmak istersin? (1-2), çıkmak için 0): ")
 
-        try:
-            varlik_secim = int(input(f"Ne almak istersin? (1-{len(piyasa.yatirim_mallari)}): "))
-            adet = int(input("Kaç adet almak istersin?: "))
 
-            secilen_varlik_adi = list(piyasa.yatirim_mallari.keys())[varlik_secim - 1]
+    if secim == '1': # AL
+        varlik_listesi = list(piyasa.yatirim_mallari.keys())
+        secilen_varlik_adi = None
+        adet = 0
+
+        if ai_kontrol:
+            secilen_varlik_adi = random.choice(varlik_listesi)
+            # AI, sahip olduğu paranın küçük bir kısmıyla yatırım yapar
+            if piyasa.yatirim_mallari[secilen_varlik_adi]['fiyat'] > 0:
+                 adet = int((oyuncu.para * random.uniform(0.05, 0.15)) / piyasa.yatirim_mallari[secilen_varlik_adi]['fiyat'])
+            if adet > 0:
+                 print(f"AI, {adet} adet {secilen_varlik_adi} almayı deniyor...")
+        else:
+            print("\n--- PİYASA (ALIM) ---")
+            for i, (varlik, detaylar) in enumerate(piyasa.yatirim_mallari.items()):
+                print(f"{i+1}: {varlik.replace('_', ' ').title()} - {detaylar['fiyat']} TL")
+            try:
+                varlik_secim = int(input(f"Ne almak istersin? (1-{len(piyasa.yatirim_mallari)}): "))
+                adet = int(input("Kaç adet almak istersin?: "))
+                secilen_varlik_adi = varlik_listesi[varlik_secim - 1]
+            except (ValueError, IndexError):
+                print("Geçersiz seçim.")
+
+        if secilen_varlik_adi and adet > 0:
             fiyat = piyasa.yatirim_mallari[secilen_varlik_adi]['fiyat']
             toplam_tutar = fiyat * adet
-
             if oyuncu.para >= toplam_tutar:
                 oyuncu.para -= toplam_tutar
                 oyuncu.portfoy[secilen_varlik_adi] = oyuncu.portfoy.get(secilen_varlik_adi, 0) + adet
                 print(f"{adet} adet {secilen_varlik_adi.replace('_', ' ').title()} satın aldın.")
             else:
                 print("Yeterli paran yok.")
-        except (ValueError, IndexError):
-            print("Geçersiz seçim.")
 
-    elif secim == '2':
+    elif secim == '2': # SAT
         if not oyuncu.portfoy:
             print("Satacak hiçbir varlığın yok.")
         else:
-            print("\n--- PORTFÖY (SATIM) ---")
             portfoy_listesi = list(oyuncu.portfoy.keys())
-            for i, varlik in enumerate(portfoy_listesi):
-                adet = oyuncu.portfoy[varlik]
-                mevcut_fiyat = piyasa.yatirim_mallari[varlik]['fiyat']
-                print(f"{i+1}: {varlik.replace('_', ' ').title()} ({adet} adet) - Mevcut Fiyat: {mevcut_fiyat} TL")
+            secilen_varlik_adi = None
+            adet_satis = 0
 
-            try:
-                varlik_secim = int(input(f"Ne satmak istersin? (1-{len(portfoy_listesi)}): "))
-                adet_satis = int(input("Kaç adet satmak istersin?: "))
-                secilen_varlik_adi = portfoy_listesi[varlik_secim - 1]
+            if ai_kontrol:
+                secilen_varlik_adi = random.choice(portfoy_listesi)
+                adet_satis = random.randint(1, oyuncu.portfoy[secilen_varlik_adi])
+                print(f"AI, elindeki {oyuncu.portfoy[secilen_varlik_adi]} adet {secilen_varlik_adi} varlığından {adet_satis} adet satmayı deniyor...")
+            else:
+                print("\n--- PORTFÖY (SATIM) ---")
+                for i, varlik in enumerate(portfoy_listesi):
+                    adet = oyuncu.portfoy[varlik]
+                    mevcut_fiyat = piyasa.yatirim_mallari[varlik]['fiyat']
+                    print(f"{i+1}: {varlik.replace('_', ' ').title()} ({adet} adet) - Mevcut Fiyat: {mevcut_fiyat} TL")
+                try:
+                    varlik_secim = int(input(f"Ne satmak istersin? (1-{len(portfoy_listesi)}): "))
+                    adet_satis = int(input("Kaç adet satmak istersin?: "))
+                    secilen_varlik_adi = portfoy_listesi[varlik_secim - 1]
+                except (ValueError, IndexError):
+                    print("Geçersiz seçim.")
 
+            if secilen_varlik_adi and adet_satis > 0:
                 if adet_satis <= oyuncu.portfoy[secilen_varlik_adi]:
                     fiyat = piyasa.yatirim_mallari[secilen_varlik_adi]['fiyat']
                     toplam_kazanc = fiyat * adet_satis
@@ -1021,8 +1160,6 @@ def yatirim_yap(oyuncu, piyasa):
                     print(f"{adet_satis} adet {secilen_varlik_adi.replace('_', ' ').title()} sattın ve {toplam_kazanc} TL kazandın.")
                 else:
                     print("Elinde o kadar varlık yok.")
-            except (ValueError, IndexError):
-                print("Geçersiz seçim.")
 
     time.sleep(2)
     return 120
@@ -1264,76 +1401,80 @@ def isletmeyi_yonet(oyuncu, piyasa, *args, **kwargs):
     time.sleep(2)
     return 240
 
-def ticaret_yap(oyuncu, piyasa):
+def ticaret_yap(oyuncu, piyasa, *args, **kwargs):
     """Ticari mal alıp satma eylemi."""
+    ai_kontrol = kwargs.get('ai_kontrol', False)
     print("\n--- TİCARET MERKEZİ ---")
-    print("1: Mal Al")
-    print("2: Mal Sat")
-    secim = input("Ne yapmak istersin? (1-2), çıkmak için 0): ")
+
+    secim = ''
+    if ai_kontrol:
+        # AI Mantığı: Eğer envanteri boşsa al, doluysa sat.
+        secim = '2' if oyuncu.ticari_envanter else '1'
+    else:
+        print("1: Mal Al")
+        print("2: Mal Sat")
+        secim = input("Ne yapmak istersin? (1-2), çıkmak için 0): ")
 
     if secim == '0':
-        return 60 # Eylem iptal edildi, 1 saat harcandı
+        return 60
 
-    if secim == '1':
-        print("\n--- PİYASA (ALIM) ---")
+    if secim == '1': # AL
         mal_listesi = list(piyasa.ticari_mallar.keys())
-        for i, (mal, detaylar) in enumerate(piyasa.ticari_mallar.items()):
-            print(f"{i+1}: {mal.capitalize()} - {detaylar['fiyat']} TL")
+        secilen_mal_adi = None
+        adet = 0
 
-        try:
-            mal_secim_str = input(f"Ne almak istersin? (1-{len(mal_listesi)}): ")
-            if not mal_secim_str: return 60
-            mal_secim = int(mal_secim_str)
+        if ai_kontrol:
+            secilen_mal_adi = random.choice(mal_listesi)
+            adet = random.randint(1, 5) # AI küçük miktarlarda işlem yapar
+            print(f"AI, {adet} adet {secilen_mal_adi} almayı deniyor...")
+        else:
+            print("\n--- PİYASA (ALIM) ---")
+            for i, (mal, detaylar) in enumerate(piyasa.ticari_mallar.items()):
+                print(f"{i+1}: {mal.capitalize()} - {detaylar['fiyat']} TL")
+            try:
+                mal_secim = int(input(f"Ne almak istersin? (1-{len(mal_listesi)}): "))
+                adet = int(input("Kaç adet almak istersin?: "))
+                secilen_mal_adi = mal_listesi[mal_secim - 1]
+            except (ValueError, IndexError):
+                print("Geçersiz seçim.")
 
-            adet_str = input("Kaç adet almak istersin?: ")
-            if not adet_str: return 60
-            adet = int(adet_str)
-
-            if adet <= 0:
-                print("Geçersiz adet.")
-                time.sleep(2)
-                return 120
-
-            secilen_mal_adi = mal_listesi[mal_secim - 1]
+        if secilen_mal_adi and adet > 0:
             fiyat = piyasa.ticari_mallar[secilen_mal_adi]['fiyat']
             toplam_tutar = fiyat * adet
-
             if oyuncu.para >= toplam_tutar:
                 oyuncu.para -= toplam_tutar
                 oyuncu.ticari_envanter[secilen_mal_adi] = oyuncu.ticari_envanter.get(secilen_mal_adi, 0) + adet
                 print(f"{adet} adet {secilen_mal_adi.capitalize()} satın aldın.")
             else:
                 print("Yeterli paran yok.")
-        except (ValueError, IndexError):
-            print("Geçersiz seçim.")
 
-    elif secim == '2':
+    elif secim == '2': # SAT
         if not oyuncu.ticari_envanter:
             print("Satacak hiçbir ticari malın yok.")
         else:
-            print("\n--- TİCARİ ENVANTER (SATIM) ---")
             envanter_listesi = list(oyuncu.ticari_envanter.keys())
-            for i, mal in enumerate(envanter_listesi):
-                adet = oyuncu.ticari_envanter[mal]
-                mevcut_fiyat = piyasa.ticari_mallar[mal]['fiyat']
-                print(f"{i+1}: {mal.capitalize()} ({adet} adet) - Mevcut Fiyat: {mevcut_fiyat} TL")
+            secilen_mal_adi = None
+            adet_satis = 0
 
-            try:
-                mal_secim_str = input(f"Ne satmak istersin? (1-{len(envanter_listesi)}): ")
-                if not mal_secim_str: return 60
-                mal_secim = int(mal_secim_str)
+            if ai_kontrol:
+                secilen_mal_adi = random.choice(envanter_listesi)
+                # Elindeki miktarın bir kısmını sat
+                adet_satis = random.randint(1, oyuncu.ticari_envanter[secilen_mal_adi])
+                print(f"AI, elindeki {oyuncu.ticari_envanter[secilen_mal_adi]} adet {secilen_mal_adi} malından {adet_satis} adet satmayı deniyor...")
+            else:
+                print("\n--- TİCARİ ENVANTER (SATIM) ---")
+                for i, mal in enumerate(envanter_listesi):
+                    adet = oyuncu.ticari_envanter[mal]
+                    mevcut_fiyat = piyasa.ticari_mallar[mal]['fiyat']
+                    print(f"{i+1}: {mal.capitalize()} ({adet} adet) - Mevcut Fiyat: {mevcut_fiyat} TL")
+                try:
+                    mal_secim = int(input(f"Ne satmak istersin? (1-{len(envanter_listesi)}): "))
+                    adet_satis = int(input("Kaç adet satmak istersin?: "))
+                    secilen_mal_adi = envanter_listesi[mal_secim - 1]
+                except (ValueError, IndexError):
+                    print("Geçersiz seçim.")
 
-                adet_satis_str = input("Kaç adet satmak istersin?: ")
-                if not adet_satis_str: return 60
-                adet_satis = int(adet_satis_str)
-
-                if adet_satis <= 0:
-                    print("Geçersiz adet.")
-                    time.sleep(2)
-                    return 120
-
-                secilen_mal_adi = envanter_listesi[mal_secim - 1]
-
+            if secilen_mal_adi and adet_satis > 0:
                 if adet_satis <= oyuncu.ticari_envanter.get(secilen_mal_adi, 0):
                     fiyat = piyasa.ticari_mallar[secilen_mal_adi]['fiyat']
                     toplam_kazanc = fiyat * adet_satis
@@ -1344,8 +1485,6 @@ def ticaret_yap(oyuncu, piyasa):
                     print(f"{adet_satis} adet {secilen_mal_adi.capitalize()} sattın ve {toplam_kazanc} TL kazandın.")
                 else:
                     print("Elinde o kadar mal yok.")
-            except (ValueError, IndexError):
-                print("Geçersiz seçim.")
     else:
         print("Geçersiz seçim.")
 
