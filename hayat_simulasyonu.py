@@ -3,6 +3,7 @@
 import random
 import os
 import time
+import copy
 
 def clear_screen():
     """Ekranı temizler."""
@@ -147,6 +148,7 @@ def yapay_zeka_eylem_yonetici(oyuncu, zaman, piyasa, trafik, karar):
         'Eğitim Al': "Şehir Merkezi",
         'Uyu': "Ev",
         'Kitap Oku': "Ev",
+        'İş Kur/Yönet': "Sanayi Bölgesi",
     }
 
     # Eylem ve fonksiyon eşleşmesi
@@ -157,6 +159,7 @@ def yapay_zeka_eylem_yonetici(oyuncu, zaman, piyasa, trafik, karar):
         'Eğitim Al': okula_git,
         'Uyu': uyu,
         'Kitap Oku': kitap_oku,
+        'İş Kur/Yönet': lambda o, z, p, t: is_kur(o, ai_kontrol=True) if o.isletme is None else isletmeyi_yonet(o, p, ai_kontrol=True),
     }
 
     hedef_konum = eylem_konum_map.get(karar)
@@ -210,13 +213,18 @@ def main():
     while not oyun_bitti:
         durumu_goster(oyuncu, zaman, piyasa)
 
-        # Karar verme aşaması
-        ai_karari = yapay_zeka.karar_ver(oyuncu, zaman)
+        # --- Öğrenme Döngüsü Başlangıcı ---
 
-        # Kararı uygulama ve harcanacak zamanı alma
+        # 1. Durumu Gözlemle
+        mevcut_durum_kopya = copy.deepcopy(oyuncu)
+        mevcut_zaman_kopya = copy.deepcopy(zaman)
+        durum_dict = {'oyuncu': mevcut_durum_kopya, 'zaman': mevcut_zaman_kopya}
+
+        # 2. Karar Ver
+        eylem_index, ai_karari = yapay_zeka.karar_ver(mevcut_durum_kopya, mevcut_zaman_kopya)
+
+        # 3. Eylemi Gerçekleştir ve Zamanı İlerlet
         harcanacak_dakika = yapay_zeka_eylem_yonetici(oyuncu, zaman, piyasa, trafik, ai_karari)
-
-        # Zamanı ilerlet ve etkileri işle
         if harcanacak_dakika > 0:
             onceki_gun = zaman.gun
             zaman.zaman_ilerlet(harcanacak_dakika)
@@ -227,11 +235,53 @@ def main():
             zaman.zaman_ilerlet(10)
 
 
+        # 4. Sonucu Değerlendir (Ödülü Hesapla)
+        sonraki_durum_dict = {'oyuncu': oyuncu, 'zaman': zaman}
+        odul = odul_hesapla(mevcut_durum_kopya, oyuncu, ai_karari)
+        print(f"--- Eylem Sonucu: Ödül = {odul}, Epsilon = {yapay_zeka.epsilon:.2f} ---")
+
+        # 5. Öğren
+        yapay_zeka.ogren(durum_dict, eylem_index, odul, sonraki_durum_dict)
+
+        # --- Öğrenme Döngüsü Sonu ---
+
         if oyuncu.saglik <= 0:
             oyun_bitti = True
             print("\nSağlığın tükendi ve hayatını kaybettin. Oyun bitti.")
 
-        time.sleep(2) # Simülasyonu yavaşlatarak takip etmeyi kolaylaştır
+        time.sleep(1) # Simülasyonu yavaşlatarak takip etmeyi kolaylaştır
+
+
+def odul_hesapla(onceki_durum, mevcut_durum, yapilan_eylem):
+    """
+    İki durum arasındaki farka ve yapılan eyleme göre bir ödül/ceza puanı hesaplar.
+    """
+    odul = 0
+
+    # Para değişiklikleri
+    para_farki = mevcut_durum.para - onceki_durum.para
+    if para_farki > 0:
+        odul += 1 # Para kazandı
+
+    # Stat değişiklikleri
+    if mevcut_durum.saglik > onceki_durum.saglik or mevcut_durum.mutluluk > onceki_durum.mutluluk:
+        odul += 2 # Sağlık veya mutluluk arttı
+
+    # Cezalar
+    if mevcut_durum.aclik > 70:
+        odul -= 5
+    if mevcut_durum.saglik < 40 or mevcut_durum.mutluluk < 40 or mevcut_durum.enerji < 40:
+        odul -= 5
+    if mevcut_durum.saglik <= 0:
+        odul -= 100 # En büyük ceza
+
+    # Eyleme özel ödüller
+    if yapilan_eylem in ['Eğitim Al', 'Kitap Oku']:
+        odul += 5
+    # Şirket kurma eylemi burada direkt kontrol edilemez, ancak dolaylı olarak para kazanma ile ödüllendirilir.
+    # Bu daha sonra geliştirilebilir.
+
+    return odul
 
 
 def bar_gostergesi_olustur(label, deger, max_deger=100, uzunluk=10):
@@ -977,55 +1027,79 @@ def yatirim_yap(oyuncu, piyasa):
     time.sleep(2)
     return 120
 
-def is_kur(oyuncu):
+def is_kur(oyuncu, *args, **kwargs):
     """Yeni bir iş kurma eylemi."""
+    ai_kontrol = kwargs.get('ai_kontrol', False)
     kurulum_maliyeti = 2500
     print(f"\nKendi işini kurmak için gereken başlangıç sermayesi {kurulum_maliyeti} TL.")
-    print("Hangi alanda bir iş kurmak istersin?")
-    urun_tipleri = list(veri.URUN_RECETELERI.keys())
-    for i, urun in enumerate(urun_tipleri):
-        print(f"{i+1}: {urun.capitalize()} Üretimi")
 
-    try:
-        secim = int(input(f"Seçimin (1-{len(urun_tipleri)}): "))
-        urun_tipi = urun_tipleri[secim - 1]
+    urun_tipi = None
+    isletme_ismi = None
 
+    if ai_kontrol:
         if oyuncu.para >= kurulum_maliyeti:
+            # AI her zaman ilk ve en basit seçeneği seçer
+            urun_tipi = list(veri.URUN_RECETELERI.keys())[0]
+            isletme_ismi = f"{oyuncu.isim}'s Tech"
+            print(f"AI, '{isletme_ismi}' adında bir şirket kurmaya karar verdi.")
+        else:
+            print("AI şirket kurmak istedi ama yeterli parası yok.")
+            return 60 # Başarısız eylem için kısa süre
+    else: # Manuel oyuncu
+        print("Hangi alanda bir iş kurmak istersin?")
+        urun_tipleri = list(veri.URUN_RECETELERI.keys())
+        for i, urun in enumerate(urun_tipleri):
+            print(f"{i+1}: {urun.capitalize()} Üretimi")
+        try:
+            secim = int(input(f"Seçimin (1-{len(urun_tipleri)}): "))
+            urun_tipi = urun_tipleri[secim - 1]
             isletme_ismi = input("İşletmenin adı ne olsun?: ")
+        except (ValueError, IndexError):
+            print("Geçersiz seçim.")
+            time.sleep(2)
+            return 180
+
+    if urun_tipi and isletme_ismi:
+        if oyuncu.para >= kurulum_maliyeti:
             oyuncu.para -= kurulum_maliyeti
             oyuncu.isletme = Isletme(isletme_ismi, kurulum_maliyeti, urun_tipi, veri.DEPARTMANLAR, veri.URUN_RECETELERI)
             print(f"Tebrikler! '{isletme_ismi}' adında bir {urun_tipi} şirketi kurdun.")
         else:
             print("Yeterli paran yok.")
-    except (ValueError, IndexError):
-        print("Geçersiz seçim.")
+
     time.sleep(2)
     return 180
 
-def isletmeyi_yonet(oyuncu, piyasa):
+def isletmeyi_yonet(oyuncu, piyasa, *args, **kwargs):
     """Mevcut işletmeyi yönetme eylemi."""
+    ai_kontrol = kwargs.get('ai_kontrol', False)
     isletme = oyuncu.isletme
     print(f"\n--- {isletme.isim.upper()} YÖNETİM PANELİ ---")
     print(f"Sermaye: {isletme.sermaye} TL | Çalışanlar: {isletme.calisan_sayisi} | Müşteri Memnuniyeti: {isletme.musteri_memnuniyeti}% | Ar-Ge Seviyesi: {isletme.ar_ge_seviyesi}")
-    hammadde_str = ", ".join([f"{k.capitalize()}: {v}" for k, v in isletme.hammadde_envanteri.items() if v > 0])
-    print(f"Hammadde Envanteri: {hammadde_str if hammadde_str else 'Boş'}")
-    print(f"Ürün Envanteri: {isletme.urun_envanteri} adet {isletme.urun_tipi}")
-    print("-" * 20)
-    print("--- İNSAN KAYNAKLARI ---")
-    print("1: Çalışanları Listele")
-    print("2: Çalışan İşe Al")
-    print("3: Çalışan Kov")
-    print("4: Çalışanlara Eğitim Ver (Maliyet: 1000 TL)")
-    print("5: Sosyal Etkinlik Düzenle (Maliyet: 750 TL)")
-    print("--- FİNANS VE PAZARLAMA ---")
-    print("6: Sermaye Ekle")
-    print("7: Pazarlama Yap (Maliyet: 300 TL)")
-    print("8: Hammadde Satın Al")
-    print("--- İŞ GELİŞTİRME ---")
-    print("9: Ar-Ge Yatırımı Yap (Maliyet: 2000 TL)")
-    print("10: İşletmeyi Sat")
 
-    secim = input("Ne yapmak istersin? (1-10), çıkmak için 0): ")
+    if ai_kontrol:
+        # AI, şimdilik en temel ve en önemli eylemi gerçekleştirir: Hammadde stoğunu kontrol et ve al.
+        print("AI, işletme envanterini kontrol ediyor...")
+        secim = '8' # Hammadde Satın Al
+    else:
+        hammadde_str = ", ".join([f"{k.capitalize()}: {v}" for k, v in isletme.hammadde_envanteri.items() if v > 0])
+        print(f"Hammadde Envanteri: {hammadde_str if hammadde_str else 'Boş'}")
+        print(f"Ürün Envanteri: {isletme.urun_envanteri} adet {isletme.urun_tipi}")
+        print("-" * 20)
+        print("--- İNSAN KAYNAKLARI ---")
+        print("1: Çalışanları Listele")
+        print("2: Çalışan İşe Al")
+        print("3: Çalışan Kov")
+        print("4: Çalışanlara Eğitim Ver (Maliyet: 1000 TL)")
+        print("5: Sosyal Etkinlik Düzenle (Maliyet: 750 TL)")
+        print("--- FİNANS VE PAZARLAMA ---")
+        print("6: Sermaye Ekle")
+        print("7: Pazarlama Yap (Maliyet: 300 TL)")
+        print("8: Hammadde Satın Al")
+        print("--- İŞ GELİŞTİRME ---")
+        print("9: Ar-Ge Yatırımı Yap (Maliyet: 2000 TL)")
+        print("10: İşletmeyi Sat")
+        secim = input("Ne yapmak istersin? (1-10), çıkmak için 0): ")
 
     if secim == '1':
         print("\n--- ÇALIŞAN LİSTESİ ---")
@@ -1132,27 +1206,39 @@ def isletmeyi_yonet(oyuncu, piyasa):
 
     elif secim == '8':
         print("\n--- HAMMADDE SATIN AL ---")
-        hammadde_listesi = list(isletme.hammadde_envanteri.keys())
-        for i, hammadde in enumerate(hammadde_listesi):
-            fiyat = piyasa.ticari_mallar[hammadde]['fiyat']
-            print(f"{i+1}: {hammadde.capitalize()} - {fiyat} TL")
+        if ai_kontrol:
+             # AI, üretim için gerekli ilk hammaddeyi seçer
+            recete = isletme.urun_receteleri.get(isletme.urun_tipi, {})
+            if not recete:
+                print("AI: Ürün reçetesi bulunamadı.")
+                return 60
 
-        try:
-            secim_h = int(input(f"Ne almak istersin? (1-{len(hammadde_listesi)}): "))
-            adet = int(input("Kaç adet almak istersin?: "))
+            secilen_hammadde = list(recete.keys())[0]
+            adet = 10 # Her seferinde sabit miktarda alır
+            print(f"AI, {adet} adet {secilen_hammadde} almaya karar verdi.")
+        else:
+            hammadde_listesi = list(isletme.hammadde_envanteri.keys())
+            for i, hammadde in enumerate(hammadde_listesi):
+                fiyat = piyasa.ticari_mallar[hammadde]['fiyat']
+                print(f"{i+1}: {hammadde.capitalize()} - {fiyat} TL")
+            try:
+                secim_h = int(input(f"Ne almak istersin? (1-{len(hammadde_listesi)}): "))
+                adet = int(input("Kaç adet almak istersin?: "))
+                secilen_hammadde = hammadde_listesi[secim_h - 1]
+            except (ValueError, IndexError):
+                print("Geçersiz seçim.")
+                time.sleep(2)
+                return 240
 
-            secilen_hammadde = hammadde_listesi[secim_h - 1]
-            fiyat = piyasa.ticari_mallar[secilen_hammadde]['fiyat']
-            toplam_tutar = fiyat * adet
+        fiyat = piyasa.ticari_mallar[secilen_hammadde]['fiyat']
+        toplam_tutar = fiyat * adet
 
-            if isletme.sermaye >= toplam_tutar:
-                isletme.sermaye -= toplam_tutar
-                isletme.hammadde_envanteri[secilen_hammadde] += adet
-                print(f"{adet} adet {secilen_hammadde.capitalize()} satın alındı.")
-            else:
-                print("İşletmenin yeterli sermayesi yok.")
-        except (ValueError, IndexError):
-            print("Geçersiz seçim.")
+        if isletme.sermaye >= toplam_tutar:
+            isletme.sermaye -= toplam_tutar
+            isletme.hammadde_envanteri[secilen_hammadde] += adet
+            print(f"{adet} adet {secilen_hammadde.capitalize()} satın alındı.")
+        else:
+            print("İşletmenin yeterli sermayesi yok.")
 
     elif secim == '9':
         maliyet = 2000 * isletme.ar_ge_seviyesi
