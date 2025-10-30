@@ -271,3 +271,19 @@ class Oyuncu:
         self.is_durumu = {"kariyer": None, "seviye": 0, "tecrube": 0}
         self.hastalik = None
         self.mevcut_konum = baslangic_konumu
+
+    def akilli_yemek_ye(self):
+        """
+        Karakterin akıllıca yemek yemesini sağlar.
+        Önce envanteri kontrol eder, yiyecek yoksa markete gitmesi gerektiğini belirtir.
+        Döneceği değer, hayat_simulasyonu.py'deki yönetici tarafından yorumlanacaktır.
+        """
+        yiyecekler = [esya for esya in self.envanter if "ev yemeği" in esya or "abur cubur" in esya]
+        if yiyecekler:
+            # Envanterde yiyecek var, ilk bulduğunu ye.
+            # Dışarıdaki bir fonksiyonun `envanter_kullan` çağırması için yiyeceğin adını döndür.
+            return yiyecekler[0]
+        else:
+            # Envanterde yiyecek yok, marketten alınması gerekiyor.
+            # Dışarıdaki bir fonksiyonun `alisveris_yap` çağırması için `None` döndür.
+            return None

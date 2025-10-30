@@ -189,6 +189,13 @@ def yapay_zeka_eylem_yonetici(oyuncu, zaman, piyasa, trafik, karar):
             return 10 # Hata durumunda zamanı biraz ilerlet
 
     # 2. Adım: Eylemi gerçekleştir
+    if karar == 'Akıllı Yemek Ye':
+        sonuc = oyuncu.akilli_yemek_ye()
+        if sonuc: # Envanterde yiyecek var
+            return envanter_kullan(oyuncu, override_secim=sonuc)
+        else: # Envanterde yiyecek yok, markete git
+            return alisveris_yap(oyuncu, zaman, piyasa, otomasyon_hedef="ev yemeği")
+
     if karar in eylem_fonksiyon_map:
         fonksiyon = eylem_fonksiyon_map[karar]
         # Bazi fonksiyonlarin argumanlari farkli, bu yuzden lambda ile sarmaladik
@@ -324,6 +331,12 @@ def odul_hesapla(onceki_durum, mevcut_durum, yapilan_eylem):
 
     if yapilan_eylem == 'Hastaneye Git' and onceki_durum.hastalik is not None and mevcut_durum.hastalik is None:
         odul += 20
+
+    # Akıllı Yemek Yeme Eylemi için Özel Ödül
+    if yapilan_eylem == 'Akıllı Yemek Ye' and onceki_durum.aclik > 70:
+        # Eğer çok açken (kritik durumdayken) yemek yeme kararı aldıysa, bu çok olumlu bir davranıştır.
+        odul += 30
+
 
     return odul
 
