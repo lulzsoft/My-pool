@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Sanal Ortamlar
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Log dosyaları
+*.log
+
+# AI verileri
+ai_tecrube.npy

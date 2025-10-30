@@ -178,65 +178,87 @@ class YapayZeka:
 
 def odul_hesapla(oyuncu_onceki, oyuncu_sonraki, secilen_eylem_adi, harcanan_dakika):
     """
-    Bir eylemin sonucuna göre ödül puanı hesaplar.
+    Bir eylemin sonucuna göre ödül puanı hesaplar. (Yeniden düzenlendi)
     """
     odul = 0
 
-    # Hayatta kalma ödülü (zamanla orantılı küçük bir bonus)
+    # Hayatta kalma ödülü
     odul += harcanan_dakika * 0.001
 
-    # Statlardaki genel değişimler için ödüller/cezalar
+    # --- Genel Stat Değişimleri ---
     odul += (oyuncu_sonraki.saglik - oyuncu_onceki.saglik) * 0.2
-    odul += (oyuncu_sonraki.mutluluk - oyuncu_onceki.mutluluk) * 0.1
-    odul -= (oyuncu_sonraki.aclik - oyuncu_onceki.aclik) * 0.3 # Açlığın artması kötü
-    odul += (oyuncu_sonraki.enerji - oyuncu_onceki.enerji) * 0.2
-    odul += (oyuncu_sonraki.hijyen - oyuncu_onceki.hijyen) * 0.1 # Hijyenin artması iyi
+    odul += (oyuncu_sonraki.mutluluk - oyuncu_onceki.mutluluk) * 0.15
+    odul -= (oyuncu_sonraki.aclik - oyuncu_onceki.aclik) * 0.4  # Açlık cezası artırıldı
+    odul += (oyuncu_sonraki.hijyen - oyuncu_onceki.hijyen) * 0.1
+
+    # Enerji artışı için koşullu ödül: Enerji zaten yüksekse ödül yok, hatta ceza var.
+    enerji_farki = oyuncu_sonraki.enerji - oyuncu_onceki.enerji
+    if enerji_farki > 0:
+        if oyuncu_onceki.enerji < 80:
+            odul += enerji_farki * 0.2
+        else: # Enerji zaten yüksekken daha fazla artırmaya çalışmak israftır.
+            odul -= 5
 
     # Parasal yetersizlikten kaynaklanan başarısız eylemler için ceza
     maliyetli_eylemler = [
         "Alışveriş Yap", "Eğlen", "Yatırım Yap", "Ticaret Yap", "Emlakçıya Git",
         "Hastaneye Git", "Sosyal Etkileşime Gir", "Ulaşım"
     ]
-    # Bir eylemin maliyetli olup olmadığını ve paranın değişip değişmediğini kontrol et
     if secilen_eylem_adi in maliyetli_eylemler and oyuncu_sonraki.para == oyuncu_onceki.para and oyuncu_onceki.para > 0:
-         # Eğer para zaten 0 değilse ve değişmediyse, eylem muhtemelen başarısız oldu
-         odul -= 15
+         odul -= 25 # Ceza artırıldı
 
-    # --- Özel durumlar için büyük ödüller ve cezalar ---
+    # --- Büyük Cezalar (Kötü Kararlar) ---
 
-    # 1. Hayat kurtaran eylemler
-    # Kritik derecede açken yemek yemek
-    if secilen_eylem_adi == "Envanteri Kullan" and oyuncu_onceki.aclik > 70 and oyuncu_sonraki.aclik < oyuncu_onceki.aclik:
-        odul += 40
+    # 1. KRİTİK İHTİYAÇLARI GÖRMEZDEN GELMEK (EN ÖNEMLİ CEZA)
+    # Parası varken ve çok açken yemekle ilgili bir eylem yapmamak
+    yemek_eylemleri = ["Envanteri Kullan", "Alışveriş Yap"]
+    envanterde_yemek_var = any("yemeği" in s or "abur cubur" in s for s in oyuncu_onceki.envanter)
+
+    if oyuncu_onceki.aclik > 70:
+        # Envanterde yemek varken yememek affedilemez.
+        if envanterde_yemek_var and secilen_eylem_adi != "Envanteri Kullan":
+            odul -= 200 # Devasa ceza
+        # Envanterde yemek yok ama parası varken markete gitmemek
+        elif not envanterde_yemek_var and oyuncu_onceki.para >= 20 and secilen_eylem_adi != "Alışveriş Yap":
+             odul -= 150 # Çok ağır ceza
+
+    # Çok açken uyumak gibi mantıksız eylemler
+    if secilen_eylem_adi == "Uyu" and oyuncu_onceki.aclik > 80:
+        odul -= 100 # Ceza artırıldı
+
+    # 2. TEKRARLAYAN VE GEREKSİZ EYLEMLER (DÖNGÜ KIRICI)
+    # Zaten dolu olan bir statı artırmaya çalışmak
+    if secilen_eylem_adi == "Uyu" and oyuncu_onceki.enerji > 95:
+        odul -= 25 # Ceza artırıldı
+    if secilen_eylem_adi == "Envanteri Kullan" and oyuncu_onceki.aclik < 10 and oyuncu_sonraki.aclik < oyuncu_onceki.aclik:
+        odul -= 25 # Ceza artırıldı
+    if secilen_eylem_adi == "Eğlen" and oyuncu_onceki.mutluluk > 95:
+        odul -= 20
+
+    # --- Büyük Ödüller (İyi Kararlar) ---
+
+    # 1. HAYAT KURTARAN EYLEMLER
+    # Kritik derecede açken yemek yemek/almak
+    if (secilen_eylem_adi == "Envanteri Kullan" or secilen_eylem_adi == "Alışveriş Yap") and oyuncu_onceki.aclik > 70 and oyuncu_sonraki.aclik < oyuncu_onceki.aclik:
+        odul += 50 # Ödül artırıldı
 
     # Kritik derecede yorgunken uyumak
     if secilen_eylem_adi == "Uyu" and oyuncu_onceki.enerji < 20 and oyuncu_sonraki.enerji > oyuncu_onceki.enerji:
-        odul += 30
+        odul += 35 # Ödül artırıldı
 
     # Hastayken hastaneye gidip iyileşmek
     if secilen_eylem_adi == "Hastaneye Git" and oyuncu_onceki.hastalik and not oyuncu_sonraki.hastalik:
         odul += 40
 
-    # 2. Mantıksız veya kötü kararlar için cezalar
-    # Çok açken uyumak
-    if secilen_eylem_adi == "Uyu" and oyuncu_onceki.aclik > 80:
-        odul -= 30
-
-    # Zaten dolu olan bir statı artırmaya çalışmak
-    if secilen_eylem_adi == "Uyu" and oyuncu_onceki.enerji > 95:
-        odul -= 10
-    if secilen_eylem_adi == "Envanteri Kullan" and oyuncu_onceki.aclik < 10 and oyuncu_sonraki.aclik < oyuncu_onceki.aclik:
-        odul -= 10 # Gereksiz yere yemek yedi
-
-    # 3. Finansal krizde doğru kararı vermek
+    # 2. FİNANSAL KRİZDE DOĞRU KARAR
     if secilen_eylem_adi == "İşe Git" and oyuncu_onceki.aclik > 60 and oyuncu_onceki.para < 15:
         odul += 30
 
-    # 4. Kritik statlarda bulunmak için genel durum cezası
-    if oyuncu_sonraki.aclik > 80 or oyuncu_sonraki.enerji < 10:
-        odul -= 25
+    # --- Durum Bazlı Sürekli Cezalar ---
+    if oyuncu_sonraki.aclik > 85 or oyuncu_sonraki.enerji < 15:
+        odul -= 20
 
-    # 5. Ölüm için çok büyük ceza
+    # Ölüm için çok büyük ceza
     if oyuncu_sonraki.saglik <= 0:
         odul -= 500
 

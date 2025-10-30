@@ -247,6 +247,26 @@ def emlakciya_git(oyuncu, **kwargs): return 120
 def sosyal_etkilesim(oyuncu, **kwargs): return 60
 
 
+def olum_gunlugu_yaz(oyuncu, zaman, neden, son_eylemler):
+    """Karakter öldüğünde bir log dosyasına kayıt düşer."""
+    with open("olum_gunlugu.log", "a", encoding="utf-8") as f:
+        f.write("="*40 + "\n")
+        f.write(f"ÖLÜM KAYDI\n")
+        f.write(f"Tarih: {zaman}\n")
+        f.write(f"Yaşanan Gün Sayısı: {zaman.gun}\n")
+        f.write(f"Ölüm Nedeni: {neden}\n")
+        f.write("\n--- SON DURUM ---\n")
+        f.write(f"Sağlık: {oyuncu.saglik:.2f}\n")
+        f.write(f"Enerji: {oyuncu.enerji:.2f}\n")
+        f.write(f"Açlık: {oyuncu.aclik:.2f}\n")
+        f.write(f"Mutluluk: {oyuncu.mutluluk:.2f}\n")
+        f.write(f"Para: {oyuncu.para:.2f}\n")
+        f.write("\n--- SON 5 EYLEM ---\n")
+        for i, eylem in enumerate(son_eylemler, 1):
+            f.write(f"{i}. {eylem}\n")
+        f.write("="*40 + "\n\n")
+
+
 # --- Ana Oyun Döngüsü ---
 
 def main():
@@ -268,6 +288,7 @@ def main():
     oyun_bitti = False
     adim = 0
     son_odul = 0
+    son_eylemler = []
 
     while not oyun_bitti:
         durumu_goster(oyuncu, zaman, piyasa, adim, son_odul)
@@ -285,15 +306,53 @@ def main():
             eylem_maskesi[EYLEMLER.index("İşe Git")] = False
         if oyuncu.is_durumu["kariyer"]:
              eylem_maskesi[EYLEMLER.index("İş Piyasası")] = False
-        if not any("yemeği" in s or "abur cubur" in s for s in oyuncu.envanter):
-            # Envanterde yemek yoksa "Envanteri Kullan" bazen mantıksız olabilir,
-            # ama başka şeyler için de kullanılabilir. Şimdilik bırakalım.
-            pass
+
+        # --- Cerrahi Müdahale: Hayatta Kalma İçgüdüsü Zorlaması (Tüm Senaryolar) ---
+        if oyuncu.aclik > 75:
+            envanterde_yemek_var = any("yemeği" in s or "abur cubur" in s for s in oyuncu.envanter)
+            # Kritik açlıkta alakasız eylemler her zaman yasaktır.
+            for eylem_adi in ["Uyu", "Eğlen", "Spor Yap", "Kitap Oku", "Yatırım Yap", "Ticaret Yap", "Emlakçıya Git"]:
+                if eylem_adi in EYLEMLER:
+                    eylem_maskesi[EYLEMLER.index(eylem_adi)] = False
+
+            # Senaryo 1: Envanterde yemek var ve evde. Çözüm: YE.
+            if envanterde_yemek_var and oyuncu.mevcut_konum.ad == "Ev":
+                eylem_maskesi[:] = False
+                eylem_maskesi[EYLEMLER.index("Envanteri Kullan")] = True
+            # Senaryo 2: Yemek yok ama markete gidip alacak kadar para var (30 TL). Çözüm: Markete GİT ve AL.
+            elif not envanterde_yemek_var and oyuncu.para >= 30:
+                if oyuncu.mevcut_konum.ad != "Şehir Merkezi":
+                    eylem_maskesi[:] = False
+                    eylem_maskesi[EYLEMLER.index("Ulaşım")] = True
+                else: # Şehir Merkezi'nde
+                    eylem_maskesi[:] = False
+                    eylem_maskesi[EYLEMLER.index("Alışveriş Yap")] = True
+            # Senaryo 3: Yeterli para yok. Çözüm: PARA KAZAN.
+            else:
+                # İşin varsa, Sanayi Bölgesi'ne git ve çalış.
+                if oyuncu.is_durumu["kariyer"]:
+                    if oyuncu.mevcut_konum.ad != "Sanayi Bölgesi":
+                        eylem_maskesi[:] = False
+                        eylem_maskesi[EYLEMLER.index("Ulaşım")] = True
+                    else: # Sanayi Bölgesi'nde
+                        eylem_maskesi[:] = False
+                        eylem_maskesi[EYLEMLER.index("İşe Git")] = True
+                # İşin yoksa, Şehir Merkezi'ne git ve iş ara.
+                else:
+                    if oyuncu.mevcut_konum.ad != "Şehir Merkezi":
+                        eylem_maskesi[:] = False
+                        eylem_maskesi[EYLEMLER.index("Ulaşım")] = True
+                    else: # Şehir Merkezi'nde
+                        eylem_maskesi[:] = False
+                        eylem_maskesi[EYLEMLER.index("İş Piyasası")] = True
 
 
         # 3. AI eylem seçsin
         eylem_index = ai.eylem_sec(mevcut_durum, eylem_maskesi)
         secilen_eylem_adi = EYLEMLER[eylem_index]
+        son_eylemler.append(secilen_eylem_adi)
+        if len(son_eylemler) > 5:
+            son_eylemler.pop(0)
 
         # 4. Eylemi gerçekleştir
         harcanacak_dakika = eylemi_gerceklestir(oyuncu, secilen_eylem_adi, zaman, piyasa, trafik)
@@ -327,10 +386,12 @@ def main():
 
         if oyun_bitti:
             print(f"\nOYUN BITTI! Karakter {zaman.gun} gün yaşadı.")
+            olum_gunlugu_yaz(oyuncu, zaman, "Açlık/Sağlık", son_eylemler)
             # Reenkarnasyon: Oyunu sıfırla ama AI öğrenmeye devam etsin
             oyuncu = Oyuncu("AI Karakter", KONUMLAR["Ev"])
             zaman = ZamanSistemi()
             oyun_bitti = False
+            son_eylemler.clear() # Listeyi temizle
 
 
 if __name__ == "__main__":
