@@ -1,5 +1,6 @@
 import time
 import numpy as np
+import sys
 from ogrenen_ai import OgrenenYapayZeka
 
 class HayatOrtami:
@@ -57,9 +58,6 @@ class HayatOrtami:
         yeni_durum = self._durum_getir()
         return yeni_durum, odul, bitti
 
-    def durum_goster(self):
-        print(f"Gün: {self.hayatta_kalan_gun} | Açlık: {self.aclik:.2f} | Enerji: {self.enerji:.2f} | Para: {self.para:.2f}")
-
 def main():
     ortam = HayatOrtami()
     durum_boyutu = 3 # açlık, enerji, para
@@ -67,6 +65,8 @@ def main():
     ai = OgrenenYapayZeka(durum_boyutu, eylem_sayisi)
 
     bolum_sayisi = 1000
+    en_uzun_hayatta_kalma = 0
+
     for bolum in range(bolum_sayisi):
         durum = ortam.sifirla()
         toplam_odul = 0
@@ -81,11 +81,15 @@ def main():
             durum = yeni_durum
             toplam_odul += odul
 
-            # Ortamı yavaşlatmak için
-            # time.sleep(0.1)
-            # ortam.durum_goster()
+            if ortam.hayatta_kalan_gun > en_uzun_hayatta_kalma:
+                en_uzun_hayatta_kalma = ortam.hayatta_kalan_gun
 
-        print(f"Bölüm: {bolum + 1}/{bolum_sayisi}, Hayatta Kalınan Gün: {ortam.hayatta_kalan_gun}, Toplam Ödül: {toplam_odul}")
+            # Tek satırda anlık durum gösterimi
+            yazi = f"Bölüm: {bolum + 1}/{bolum_sayisi} | Gün: {ortam.hayatta_kalan_gun} | En Uzun: {en_uzun_hayatta_kalma} | Ödül: {toplam_odul:.2f} | Açlık: {ortam.aclik:.2f} | Enerji: {ortam.enerji:.2f} | Para: {ortam.para:.2f} | Epsilon: {ai.epsilon:.2f}"
+            sys.stdout.write("\r" + yazi.ljust(120))
+            sys.stdout.flush()
+
+    print("\nEğitim tamamlandı.")
 
 if __name__ == "__main__":
     main()
