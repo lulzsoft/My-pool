@@ -318,10 +318,30 @@ def odul_hesapla(onceki_durum, mevcut_durum, yapilan_eylem):
     """
     odul = 0
 
-    # Eylem para yetersizliği nedeniyle başarısız olduysa cezalandır
+    # 1. Öncelik: Eylem para yetersizliği nedeniyle başarısız olduysa hemen cezalandır.
     if mevcut_durum.son_eylem_basarisiz:
         return -15
 
+    # 2. Öncelik: Hayatta kalma mücadelesi için kritik cezalar ve ödüller.
+    # Kritik açlık durumu
+    if onceki_durum.aclik > 70:
+        if yapilan_eylem == 'Akıllı Yemek Ye':
+            odul += 40  # Çok açken yemek yemek => BÜYÜK ÖDÜL
+        else:
+            odul -= 25  # Çok açken başka bir şey yapmak => BÜYÜK CEZA
+
+    # Kritik enerji durumu
+    if onceki_durum.enerji < 20:
+        if yapilan_eylem == 'Uyu':
+            odul += 30  # Çok yorgunken uyumak => BÜYÜK ÖDÜL
+        else:
+            odul -= 25  # Çok yorgunken başka bir şey yapmak => BÜYÜK CEZA
+
+    # Mantıksız kararlar için ek cezalar
+    if yapilan_eylem == 'Uyu' and onceki_durum.aclik > 80:
+        odul -= 30 # Açlıktan ölmek üzereyken uyumak => APTALCA
+
+    # 3. Öncelik: Genel stat değişiklikleri ve diğer eylemler.
     # Para değişiklikleri
     para_farki = mevcut_durum.para - onceki_durum.para
     if para_farki > 0:
@@ -331,13 +351,11 @@ def odul_hesapla(onceki_durum, mevcut_durum, yapilan_eylem):
     if mevcut_durum.saglik > onceki_durum.saglik or mevcut_durum.mutluluk > onceki_durum.mutluluk:
         odul += 2
 
-    # Cezalar
-    if mevcut_durum.aclik > 70:
-        odul -= 5
-    if mevcut_durum.saglik < 40 or mevcut_durum.mutluluk < 40 or mevcut_durum.enerji < 40:
+    # Genel Cezalar
+    if mevcut_durum.saglik < 40 or mevcut_durum.mutluluk < 40:
         odul -= 5
     if mevcut_durum.saglik <= 0:
-        odul -= 100
+        odul -= 100 # Ölüm en büyük ceza
 
     # Eyleme özel ödüller
     if yapilan_eylem in ['Eğitim Al', 'Kitap Oku', 'Sosyal Etkileşime Gir']:
@@ -354,12 +372,6 @@ def odul_hesapla(onceki_durum, mevcut_durum, yapilan_eylem):
 
     if yapilan_eylem == 'Hastaneye Git' and onceki_durum.hastalik is not None and mevcut_durum.hastalik is None:
         odul += 20
-
-    # Akıllı Yemek Yeme Eylemi için Özel Ödül
-    if yapilan_eylem == 'Akıllı Yemek Ye' and onceki_durum.aclik > 70:
-        # Eğer çok açken (kritik durumdayken) yemek yeme kararı aldıysa, bu çok olumlu bir davranıştır.
-        odul += 20
-
 
     return odul
 
