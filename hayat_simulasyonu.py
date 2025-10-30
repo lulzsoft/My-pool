@@ -341,6 +341,10 @@ def odul_hesapla(onceki_durum, mevcut_durum, yapilan_eylem):
     if yapilan_eylem == 'Uyu' and onceki_durum.aclik > 80:
         odul -= 30 # Açlıktan ölmek üzereyken uyumak => APTALCA
 
+    # Finansal Kriz Teşviği: Aç ve parasızken çalışmayı öğrenmesi için bonus
+    if onceki_durum.aclik > 60 and onceki_durum.para < 15 and yapilan_eylem == 'Çalış':
+        odul += 30 # Hayatta kalmak için para kazanmak => AKILLICA
+
     # 3. Öncelik: Genel stat değişiklikleri ve diğer eylemler.
     # Para değişiklikleri
     para_farki = mevcut_durum.para - onceki_durum.para
