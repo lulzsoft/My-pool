@@ -263,7 +263,6 @@ class Oyuncu:
         self.metabolizma_hizi = 1.0
         self.metabolizma_etki_suresi = 0
         self.gazeteler = []
-        self.otomasyon_modu = False
         self.universite_gun_sayaci = 0
         self.diploma = False
         self.sahip_olunan_evler = []
