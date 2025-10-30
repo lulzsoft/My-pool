@@ -68,7 +68,7 @@ URUN_RECETELERI = {
 MAGAZA_ESYALARI = {
     "gazete": {"fiyat": 25},
     "kitap": {"fiyat": 75, "etki": "zeka", "deger": 5},
-    "konsol oyunu": {"fiyat": 200, "etki": "mutluk", "deger": 15},
+    "konsol oyunu": {"fiyat": 200, "etki": "mutluluk", "deger": 15},
     "abur cubur": {"fiyat": 15, "etki": "aclik", "deger": -40, "metabolizma_etkisi": 0.2},
     "ev yemeği": {"fiyat": 40, "etki": "aclik", "deger": -50, "metabolizma_etkisi": 0},
     "lüks restoran yemeği": {"fiyat": 150, "etki": "aclik", "deger": -70, "metabolizma_etkisi": -0.1},
