@@ -214,6 +214,21 @@ def gunluk_loglari_yaz(gun, loglar):
             f.write(log + "\n")
         f.write("\n")
 
+def olum_gunlugu_yaz(oyuncu, zaman, son_eylem):
+    """Karakter öldüğünde son durumunu bir log dosyasına yazar."""
+    with open("olum_gunlugu.log", "a", encoding="utf-8") as f:
+        f.write(f"--- ÖLÜM RAPORU: {oyuncu.isim} ---\n")
+        f.write(f"Tarih: {zaman}\n")
+        f.write(f"Yaş: {oyuncu.yas}\n")
+        f.write(f"Son Eylem: {son_eylem}\n")
+        f.write("--- SON DURUM ---\n")
+        f.write(f"Sağlık: {oyuncu.saglik:.1f}\n")
+        f.write(f"Mutluluk: {oyuncu.mutluluk:.1f}\n")
+        f.write(f"Enerji: {oyuncu.enerji:.1f}\n")
+        f.write(f"Açlık: {oyuncu.aclik:.1f}\n")
+        f.write(f"Para: {oyuncu.para}\n")
+        f.write("-" * 20 + "\n\n")
+
 def main():
     """Ana oyun fonksiyonu. Reenkarnasyon döngüsü içerir."""
     hayat_sayaci = 0
@@ -281,6 +296,7 @@ def main():
 
             if oyuncu.saglik <= 0:
                 oyun_bitti = True
+                olum_gunlugu_yaz(oyuncu, zaman, ai_karari)
                 yapay_zeka.kaydet() # Ölmeden hemen önce son bir kez kaydet
                 if not HIZLI_MOD:
                     print(f"\n--- HAYAT #{hayat_sayaci} SONA ERDİ (Yaş: {oyuncu.yas}, Gün: {zaman.gun}) ---")
@@ -335,7 +351,7 @@ def odul_hesapla(onceki_durum, mevcut_durum, yapilan_eylem):
     # Akıllı Yemek Yeme Eylemi için Özel Ödül
     if yapilan_eylem == 'Akıllı Yemek Ye' and onceki_durum.aclik > 70:
         # Eğer çok açken (kritik durumdayken) yemek yeme kararı aldıysa, bu çok olumlu bir davranıştır.
-        odul += 30
+        odul += 20
 
 
     return odul
