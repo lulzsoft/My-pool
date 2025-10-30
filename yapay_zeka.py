@@ -126,6 +126,16 @@ class YapayZeka:
         dW1 = np.dot(durum_cache.T, hata_1)
         db1 = np.sum(hata_1, axis=0, keepdims=True)
 
+        # Gradyan Kırpma (Gradient Clipping)
+        np.clip(dW4, -1, 1, out=dW4)
+        np.clip(db4, -1, 1, out=db4)
+        np.clip(dW3, -1, 1, out=dW3)
+        np.clip(db3, -1, 1, out=db3)
+        np.clip(dW2, -1, 1, out=dW2)
+        np.clip(db2, -1, 1, out=db2)
+        np.clip(dW1, -1, 1, out=dW1)
+        np.clip(db1, -1, 1, out=db1)
+
         self.W1 += self.ogrenme_orani * dW1
         self.b1 += self.ogrenme_orani * db1
         self.W2 += self.ogrenme_orani * dW2
@@ -203,6 +213,10 @@ def odul_hesapla(oyuncu_onceki, oyuncu_sonraki, secilen_eylem_adi, harcanan_daki
     if secilen_eylem_adi == "Uyu" and oyuncu_onceki.enerji < 20 and oyuncu_sonraki.enerji > oyuncu_onceki.enerji:
         odul += 30
 
+    # Hastayken hastaneye gidip iyileşmek
+    if secilen_eylem_adi == "Hastaneye Git" and oyuncu_onceki.hastalik and not oyuncu_sonraki.hastalik:
+        odul += 40
+
     # 2. Mantıksız veya kötü kararlar için cezalar
     # Çok açken uyumak
     if secilen_eylem_adi == "Uyu" and oyuncu_onceki.aclik > 80:
@@ -238,7 +252,7 @@ def durumu_al(oyuncu, zaman, piyasa):
         oyuncu.enerji / 100.0,
         oyuncu.aclik / 100.0,
         oyuncu.hijyen / 100.0,
-        oyuncu.para / 10000.0,  # Parayı makul bir üst limite böl
+        np.clip(oyuncu.para / 10000.0, 0, 10), # Parayı normalleştir ve patlamasını önle (max 100k)
         oyuncu.zeka / 100.0,
         oyuncu.sosyal_beceri / 100.0,
         1 if oyuncu.diploma else 0,

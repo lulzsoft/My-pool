@@ -84,7 +84,7 @@ def zaman_etkilerini_isle(oyuncu, zaman, piyasa, gecen_dakika, gecen_gun_sayisi)
             oyuncu.hastalik = random.choice(["Grip", "Mide Rahatsızlığı", "Soğuk Algınlığı"])
             oyuncu.mutluluk -= 20
     if gecen_gun_sayisi > 0:
-        for _ in range(gecen_gun_sayisi):
+        for _ in range(int(gecen_gun_sayisi)):
             piyasa.gunluk_guncelle(zaman.gun)
             if oyuncu.isletme:
                 oyuncu.isletme.tedarik_yap(piyasa)
@@ -115,7 +115,7 @@ def bar_gostergesi_olustur(label, deger):
 def durumu_goster(oyuncu, zaman, piyasa, adim=0, son_odul=0):
     """Oyuncunun anlık durumunu gösterir."""
     if HIZLI_MOD:
-        print(f"\rAdım: {adim: <6} Gün: {zaman.gun: <4} Saat: {zaman.saat:02d} | Sağ: {oyuncu.saglik: <3.0f} Mut: {oyuncu.mutluluk: <3.0f} Ene: {oyuncu.enerji: <3.0f} Aç: {oyuncu.aclik: <3.0f} Para: {oyuncu.para: <6.0f} | Ödül: {son_odul: <6.2f}", end="")
+        print(f"\rAdım: {adim: <6} Gün: {zaman.gun: <4} Saat: {int(zaman.saat):02d} | Sağ: {oyuncu.saglik: <3.0f} Mut: {oyuncu.mutluluk: <3.0f} Ene: {oyuncu.enerji: <3.0f} Aç: {oyuncu.aclik: <3.0f} Para: {oyuncu.para: <6.0f} | Ödül: {son_odul: <6.2f}", end="")
         return
     clear_screen()
     print(f"--- {zaman} ---")
@@ -242,9 +242,9 @@ def yatirim_yap(oyuncu, zaman, piyasa): return 120
 def is_kur(oyuncu): return 180
 def isletmeyi_yonet(oyuncu, piyasa): return 240
 def ticaret_yap(oyuncu, zaman, piyasa): return 120
-def gazete_oku(oyuncu): return 60
-def emlakciya_git(oyuncu): return 120
-def sosyal_etkilesim(oyuncu): return 60
+def gazete_oku(oyuncu, **kwargs): return 60
+def emlakciya_git(oyuncu, **kwargs): return 120
+def sosyal_etkilesim(oyuncu, **kwargs): return 60
 
 
 # --- Ana Oyun Döngüsü ---

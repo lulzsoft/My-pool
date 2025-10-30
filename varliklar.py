@@ -230,6 +230,7 @@ class PiyasaSistemi:
         for varlik, detaylar in self.yatirim_mallari.items():
             degisim_yuzdesi = detaylar["trend"] + (random.uniform(-detaylar.get("volatilite", 0.1), detaylar.get("volatilite", 0.1)))
             yeni_fiyat = detaylar["fiyat"] * (1 + degisim_yuzdesi)
+            yeni_fiyat = min(yeni_fiyat, 1_000_000_000) # Patlamayı önle
             self.yatirim_mallari[varlik]["fiyat"] = max(1, int(yeni_fiyat))
 
         for mal, detaylar in self.ticari_mallar.items():
@@ -242,6 +243,8 @@ class PiyasaSistemi:
 
             fiyat_degisim_orani = (detaylar["talep"] - detaylar["arz"]) / 1000
             yeni_fiyat = detaylar["fiyat"] * (1 + fiyat_degisim_orani)
+            # Fiyatların patlamasını önlemek için bir üst limit ekle
+            yeni_fiyat = min(yeni_fiyat, 1_000_000_000)
             self.ticari_mallar[mal]["fiyat"] = max(5, int(yeni_fiyat))
 
 class Oyuncu:
