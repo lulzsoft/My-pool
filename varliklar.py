@@ -196,7 +196,7 @@ class ZamanSistemi:
         self.dakika = 0
 
     def __str__(self):
-        return f"GÜN: {self.gun} | SAAT: {self.saat:02d}:{self.dakika:02d}"
+        return f"GÜN: {self.gun} | SAAT: {int(self.saat):02d}:{int(self.dakika):02d}"
 
     def zaman_ilerlet(self, gececek_dakika):
         """Zamanı belirtilen dakika kadar ilerletir ve gün/saat geçişlerini yönetir."""
