@@ -271,6 +271,7 @@ class Oyuncu:
         self.is_durumu = {"kariyer": None, "seviye": 0, "tecrube": 0}
         self.hastalik = None
         self.mevcut_konum = baslangic_konumu
+        self.son_eylem_basarisiz = False
 
     def akilli_yemek_ye(self):
         """

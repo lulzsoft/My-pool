@@ -266,6 +266,9 @@ def main():
             mevcut_zaman_kopya = copy.deepcopy(zaman)
             durum_dict = {'oyuncu': mevcut_durum_kopya, 'zaman': mevcut_zaman_kopya}
 
+            # Her eylemden önce başarısızlık bayrağını sıfırla
+            oyuncu.son_eylem_basarisiz = False
+
             eylem_index, ai_karari = yapay_zeka.karar_ver(mevcut_durum_kopya, mevcut_zaman_kopya)
 
             onceki_gun = zaman.gun
@@ -314,6 +317,10 @@ def odul_hesapla(onceki_durum, mevcut_durum, yapilan_eylem):
     İki durum arasındaki farka ve yapılan eyleme göre bir ödül/ceza puanı hesaplar.
     """
     odul = 0
+
+    # Eylem para yetersizliği nedeniyle başarısız olduysa cezalandır
+    if mevcut_durum.son_eylem_basarisiz:
+        return -15
 
     # Para değişiklikleri
     para_farki = mevcut_durum.para - onceki_durum.para
@@ -519,6 +526,7 @@ def hastaneye_git(oyuncu):
     else:
         if not HIZLI_MOD:
             print("Tedavi için yeterli paran yok.")
+        oyuncu.son_eylem_basarisiz = True
 
     if not HIZLI_MOD:
         time.sleep(2)
@@ -572,6 +580,7 @@ def sosyal_etkilesim(oyuncu):
             else:
                 if not HIZLI_MOD:
                     print("Geçersiz eylem veya yetersiz para.")
+                oyuncu.son_eylem_basarisiz = True
                 return 60
     except (ValueError, IndexError):
         if not HIZLI_MOD:
@@ -750,6 +759,7 @@ def ulasim_yap(oyuncu, zaman, trafik, otomasyon_modu=False, hedef_konum_adi=None
         else:
             if not HIZLI_MOD:
                 print("Seyahat için yeterli paran yok.")
+            oyuncu.son_eylem_basarisiz = True
             return 10
 
     except (ValueError, IndexError):
@@ -917,6 +927,7 @@ def alisveris_yap(oyuncu, zaman, piyasa, otomasyon_hedef=None):
         else:
             if not HIZLI_MOD:
                 print("Yeterli paran yok.")
+            oyuncu.son_eylem_basarisiz = True
     if not HIZLI_MOD:
         time.sleep(2)
     return 60
@@ -1082,7 +1093,8 @@ def eglen(oyuncu):
     else:
         if not HIZLI_MOD:
             print("Eğlenmek için yeterli paran yok. 1 saatin boşa geçti.")
-            time.sleep(2)
+        oyuncu.son_eylem_basarisiz = True
+        time.sleep(2)
         return 60
 
 def okula_git(oyuncu, *args, **kwargs):
@@ -1220,6 +1232,7 @@ def yatirim_yap(oyuncu, piyasa, ai_kontrol=False):
             elif not ai_kontrol:
                 if not HIZLI_MOD:
                     print("Yeterli paran yok.")
+                oyuncu.son_eylem_basarisiz = True
         except (ValueError, IndexError):
             if not HIZLI_MOD:
                 print("Geçersiz seçim.")
