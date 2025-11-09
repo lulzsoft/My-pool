@@ -99,7 +99,7 @@ def eylemi_gerceklestir_stratejik(yonetici, takim_id, eylem_index):
         if hedef_kaynak:
             bos_isci.gorev_ata("topla", hedef_kaynak)
 
-    elif eylem == "TOPLU_SALDIRI":
+    elif eylem == "TOPLU_SALDIRI" and yonetici.savas_basladi_mi:
         savascilar = [b for b in yonetici.birimler[takim_id] if isinstance(b, (YakinDovuscu, Menzilli))]
         dusman_takim_id = 2 if takim_id == 1 else 1
         hedef = yonetici.en_yakin_dusman_birim_bul(savascilar, dusman_takim_id)
@@ -130,6 +130,10 @@ class OyunYonetici:
         self.ayarlar = ayarlar
         self.sim_ayarlari = ayarlar['simulasyon']
         self.ekonomi_ayarlari = ayarlar['ekonomi']
+
+        self.saldirmazlik_suresi = self.sim_ayarlari.get('saldirmazlik_suresi', 0)
+        self.oyun_dongusu = 0
+        self.savas_basladi_mi = self.saldirmazlik_suresi <= 0
 
         self.girdi_boyutu = 20 # Sabit bir girdi boyutu belirliyoruz.
         self.ajanlar = {
@@ -219,6 +223,13 @@ def oyunu_oyna(ayarlar, gorsel_mod=True):
     while calisiyor:
         if gorsel_mod and pygame.event.get(pygame.QUIT): calisiyor = False
 
+        # --- Saldırmazlık Süresi Kontrolü ---
+        if not yonetici.savas_basladi_mi:
+            yonetici.oyun_dongusu += 1
+            if yonetici.oyun_dongusu >= yonetici.saldirmazlik_suresi:
+                yonetici.savas_basladi_mi = True
+                print("--- SAVAŞ BAŞLADI! ---")
+
         # --- AI Karar Verme Bloğu ---
         if dongu_sayaci % sim_ayarlari['karar_verme_araligi'] == 0:
             for takim_id in yonetici.ajanlar.keys():
@@ -237,7 +248,7 @@ def oyunu_oyna(ayarlar, gorsel_mod=True):
                     if sonuc and sonuc[0] == 'kaynak_birak':
                         yonetici.kaynaklar[f"takim{takim_id}"][sonuc[1]] += sonuc[2]
                 elif isinstance(birim, (YakinDovuscu, Menzilli)):
-                     if birim.hedef and birim.hedef.hp > 0:
+                     if birim.hedef and birim.hedef.hp > 0 and yonetici.savas_basladi_mi:
                          if isinstance(birim, YakinDovuscu): birim.saldir(birim.hedef)
                          elif isinstance(birim, Menzilli): birim.saldir(birim.hedef, yonetici.mermiler)
                          birim.hareket_et(birim.hedef.x, birim.hedef.y)
