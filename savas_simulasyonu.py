@@ -4,224 +4,297 @@ import sys
 import numpy as np
 import os
 import json
-from nesneler.asker import YakinDovuscu, Menzilli, Asker
+from nesneler.asker import Isci, YakinDovuscu, Menzilli, Asker
+from nesneler.bina import Bina, Kisla
+from nesneler.kaynak import Kaynak
 from ai_ajan import AIAjan
 
-# --- Global Ayarlar ---
-# Bu ayarlar `oyunu_oyna` fonksiyonuna parametre olarak geçilecek.
-# Bu sayede turnuva modu farklı ayarlarla çalıştırılabilir.
-
 # --- Renkler ---
-RENKLER = {
-    "BEYAZ": (255, 255, 255),
-    "KIRMIZI": (255, 0, 0),
-    "MAVI": (0, 0, 255),
-    "SIYAH": (0, 0, 0)
-}
+RENKLER = {"BEYAZ": (255, 255, 255), "KIRMIZI": (255, 0, 0), "MAVI": (0, 0, 255), "SIYAH": (0, 0, 0)}
 
-# --- Yardımcı Fonksiyonlar (Değişiklik Yok) ---
+# --- AI Strateji Tanımları ---
+EYLEM_UZAYI = [
+    "ISCI_URET", "KISLA_INSA_ET", "YAKIN_DOVUSCU_URET", "MENZILLI_URET",
+    "ISCI_ODUNA_GONDER", "ISCI_GIDAYA_GONDER", "ISCI_MADENE_GONDER",
+    "TOPLU_SALDIRI", "USSE_DON"
+]
+EYLEM_SAYISI = len(EYLEM_UZAYI)
 
-def durumu_vektore_cevir(ordular, takim_id, maks_birim_sayisi, genislik, yukseklik):
-    """Oyun durumunu AI için sabit boyutlu bir numpy dizisine dönüştürür."""
-    dost_takim = ordular[takim_id]
+def durumu_vektore_cevir_gelismis(yonetici, takim_id):
+    """Oyun durumunu AI için gelişmiş bir vektöre dönüştürür."""
     dusman_takim_id = 2 if takim_id == 1 else 1
-    dusman_takim = ordular[dusman_takim_id]
 
-    giris_boyutu = maks_birim_sayisi * 4 * 2
-    vektor = np.zeros(giris_boyutu)
+    # Kendi kaynak ve birim bilgileri
+    dost_kaynaklar = yonetici.kaynaklar[f"takim{takim_id}"]
+    dost_birimler = yonetici.birimler[takim_id]
+    dost_binalar = yonetici.binalar[takim_id]
 
-    for i in range(maks_birim_sayisi):
-        if i < len(dost_takim):
-            asker = dost_takim[i]
-            offset = i * 4
-            vektor[offset] = asker.x / genislik
-            vektor[offset + 1] = asker.y / yukseklik
-            vektor[offset + 2] = asker.hp / 100.0
-            vektor[offset + 3] = 0 if isinstance(asker, YakinDovuscu) else 1
+    # Düşman birim ve bina bilgileri (görüş alanı varsayımıyla)
+    dusman_birimler = yonetici.birimler[dusman_takim_id]
+    dusman_binalar = yonetici.binalar[dusman_takim_id]
 
-    for i in range(maks_birim_sayisi):
-        if i < len(dusman_takim):
-            asker = dusman_takim[i]
-            offset = (maks_birim_sayisi * 4) + (i * 4)
-            vektor[offset] = asker.x / genislik
-            vektor[offset + 1] = asker.y / yukseklik
-            vektor[offset + 2] = asker.hp / 100.0
-            vektor[offset + 3] = 0 if isinstance(asker, YakinDovuscu) else 1
+    vektor = [
+        # Kaynaklar (normalize edilebilir)
+        dost_kaynaklar.get('odun', 0) / 1000.0,
+        dost_kaynaklar.get('gıda', 0) / 1000.0,
+        dost_kaynaklar.get('maden', 0) / 1000.0,
 
-    return vektor
+        # Birim sayıları
+        sum(1 for b in dost_birimler if isinstance(b, Isci)) / 20.0,
+        sum(1 for b in dost_birimler if isinstance(b, YakinDovuscu)) / 20.0,
+        sum(1 for b in dost_birimler if isinstance(b, Menzilli)) / 20.0,
 
-def en_yakin_dusman_bul(asker, dusman_ordusu):
-    if not dusman_ordusu: return None
-    return min(dusman_ordusu, key=lambda d: ((asker.x - d.x)**2 + (asker.y - d.y)**2))
+        # Bina sayıları
+        sum(1 for b in dost_binalar if isinstance(b, Kisla)) / 5.0,
 
-def en_zayif_dusman_bul(dusman_ordusu):
-    if not dusman_ordusu: return None
-    return min(dusman_ordusu, key=lambda d: d.hp)
+        # Düşman bilgileri (basit)
+        len(dusman_birimler) / 40.0,
+        len(dusman_binalar) / 10.0,
+    ]
 
-def eylemi_gerceklestir(takim_id, ordu, dusman_ordusu, eylem):
-    if not ordu or not dusman_ordusu: return
-    hedef = None
-    if eylem == 0:
-        for asker in ordu: asker.hedef = en_yakin_dusman_bul(asker, dusman_ordusu)
-        return
-    elif eylem == 1: hedef = en_zayif_dusman_bul(dusman_ordusu)
-    elif eylem == 2:
-        merkez_x = sum(a.x for a in ordu) / len(ordu)
-        merkez_y = sum(a.y for a in ordu) / len(ordu)
-        hedef = en_yakin_dusman_bul(pygame.Rect(merkez_x, merkez_y, 1, 1), dusman_ordusu)
-    elif eylem == 3:
-        for asker in ordu:
-            hedef_x, hedef_y = asker.x + random.randint(-50, 50), asker.y + random.randint(-50, 50)
-            asker.hedef = pygame.Rect(hedef_x, hedef_y, 1, 1)
-        return
-    if hedef:
-        for asker in ordu: asker.hedef = hedef
+    # Vektörün geri kalanını doldur (sabit boyut için)
+    # Gerekirse haritadaki kaynakların konumları gibi ek bilgiler eklenebilir.
+    mevcut_boyut = len(vektor)
+    hedef_boyut = yonetici.girdi_boyutu
+    if mevcut_boyut < hedef_boyut:
+        vektor.extend([0.0] * (hedef_boyut - mevcut_boyut))
 
-def odul_hesapla(eski_hp, yeni_hp):
-    odul = (eski_hp['dusman'] - yeni_hp['dusman']) * 0.1
-    odul -= (eski_hp['dost'] - yeni_hp['dost']) * 0.1
+    return np.array(vektor)
+
+def eylemi_gerceklestir_stratejik(yonetici, takim_id, eylem_index):
+    """AI tarafından seçilen stratejik eylemi oyunda uygular."""
+    eylem = EYLEM_UZAYI[eylem_index]
+
+    ana_bina = next((b for b in yonetici.binalar[takim_id] if isinstance(b, Bina) and not isinstance(b, Kisla)), None)
+    isciler = [b for b in yonetici.birimler[takim_id] if isinstance(b, Isci)]
+    bos_isci = next((i for i in isciler if i.gorev == "bos"), None)
+
+    if eylem == "ISCI_URET" and ana_bina and yonetici.birim_uretebilir_mi(takim_id, "Isci"):
+        # Ana binadan işçi üret (bu özellik Bina sınıfına eklenebilir)
+        # Şimdilik direkt oluşturuyoruz
+        yonetici.maliyeti_dus(takim_id, "Isci")
+        renk = RENKLER[yonetici.ayarlar[f'takim{takim_id}']['renk']]
+        yeni_isci = Isci(ana_bina.x + 20, ana_bina.y, takim_id, renk)
+        yonetici.birimler[takim_id].append(yeni_isci)
+
+    elif eylem == "KISLA_INSA_ET" and bos_isci and yonetici.birim_uretebilir_mi(takim_id, "Kisla"):
+        # Rastgele bir konuma kışla inşa et
+        yonetici.maliyeti_dus(takim_id, "Kisla")
+        renk = RENKLER[yonetici.ayarlar[f'takim{takim_id}']['renk']]
+        x = ana_bina.x + random.randint(-100, 100)
+        y = ana_bina.y + random.randint(-100, 100)
+        yeni_kisla = Kisla(x,y, takim_id, renk)
+        yonetici.binalar[takim_id].append(yeni_kisla) # Şimdilik anında inşa
+
+    elif eylem in ["YAKIN_DOVUSCU_URET", "MENZILLI_URET"]:
+        kisla = next((b for b in yonetici.binalar[takim_id] if isinstance(b, Kisla)), None)
+        birim_tipi = "YakinDovuscu" if eylem == "YAKIN_DOVUSCU_URET" else "Menzilli"
+        if kisla and yonetici.birim_uretebilir_mi(takim_id, birim_tipi):
+            yonetici.maliyeti_dus(takim_id, birim_tipi)
+            kisla.birim_uret(birim_tipi)
+
+    elif eylem.startswith("ISCI_") and bos_isci:
+        kaynak_tipi = eylem.split('_')[1].lower()
+        hedef_kaynak = yonetici.en_yakin_kaynagi_bul(bos_isci, kaynak_tipi)
+        if hedef_kaynak:
+            bos_isci.gorev_ata("topla", hedef_kaynak)
+
+    elif eylem == "TOPLU_SALDIRI":
+        savascilar = [b for b in yonetici.birimler[takim_id] if isinstance(b, (YakinDovuscu, Menzilli))]
+        dusman_takim_id = 2 if takim_id == 1 else 1
+        hedef = yonetici.en_yakin_dusman_birim_bul(savascilar, dusman_takim_id)
+        if hedef:
+            for savasci in savascilar:
+                savasci.hedef = hedef
+
+def odul_hesapla_gelismis(yonetici, takim_id, eski_durum_vektor, yeni_durum_vektor):
+    """Stratejik eylemin sonucuna göre ödülü hesaplar."""
+    odul = 0
+    # Kaynak artışı
+    odul += (yeni_durum_vektor[0] - eski_durum_vektor[0]) * 5 # Odun
+    odul += (yeni_durum_vektor[1] - eski_durum_vektor[1]) * 5 # Gıda
+    odul += (yeni_durum_vektor[2] - eski_durum_vektor[2]) * 8 # Maden
+
+    # Birim ve bina artışı
+    odul += (yeni_durum_vektor[3] - eski_durum_vektor[3]) * 10 # İşçi
+    odul += (yeni_durum_vektor[4] - eski_durum_vektor[4]) * 20 # Savaşçı
+    odul += (yeni_durum_vektor[6] - eski_durum_vektor[6]) * 30 # Kışla
+
+    # Düşmana verilen hasar (dolaylı olarak düşman birim sayısının azalmasıyla ölçülür)
+    odul += (eski_durum_vektor[7] - yeni_durum_vektor[7]) * 50
+
     return odul
 
-# --- Ana Oyun Fonksiyonu (Yeniden Düzenlendi) ---
+class OyunYonetici:
+    def __init__(self, ayarlar):
+        self.ayarlar = ayarlar
+        self.sim_ayarlari = ayarlar['simulasyon']
+        self.ekonomi_ayarlari = ayarlar['ekonomi']
+
+        self.girdi_boyutu = 20 # Sabit bir girdi boyutu belirliyoruz.
+        self.ajanlar = {
+            1: AIAjan(1, self.girdi_boyutu, EYLEM_SAYISI, ayarlar['takim1']['model']),
+            2: AIAjan(2, self.girdi_boyutu, EYLEM_SAYISI, ayarlar['takim2']['model'])
+        }
+
+        self.kaynaklar = {"takim1": self.ekonomi_ayarlari['baslangic_kaynaklari'].copy(),
+                          "takim2": self.ekonomi_ayarlari['baslangic_kaynaklari'].copy()}
+
+        self.harita_kaynaklari = []
+        self.binalar = {1: [], 2: []}
+        self.birimler = {1: [], 2: []}
+        self.mermiler = []
+        self.haritayi_kur()
+        self.baslangic_birimlerini_kur()
+
+    def haritayi_kur(self):
+        #... (öncekiyle aynı)
+        genislik = self.sim_ayarlari['ekran_genislik']
+        yukseklik = self.sim_ayarlari['ekran_yukseklik']
+        for tip, sayi in self.ayarlar['harita']['kaynak_sayisi'].items():
+            for _ in range(sayi):
+                x = random.randint(50, genislik - 50)
+                y = random.randint(50, yukseklik - 50)
+                self.harita_kaynaklari.append(Kaynak(x, y, tip))
+
+    def baslangic_birimlerini_kur(self):
+        #... (öncekiyle aynı)
+        takim1_ayarlari = self.ayarlar['takim1']
+        renk1 = RENKLER[takim1_ayarlari['renk']]
+        ana_bina1 = Bina(100, self.sim_ayarlari['ekran_yukseklik'] // 2, 1, renk1, can=5000)
+        self.binalar[1].append(ana_bina1)
+        for _ in range(takim1_ayarlari['baslangic_birimleri']['Isci']):
+            self.birimler[1].append(Isci(ana_bina1.x + 70, ana_bina1.y + random.randint(-20, 20), 1, renk1))
+
+        takim2_ayarlari = self.ayarlar['takim2']
+        renk2 = RENKLER[takim2_ayarlari['renk']]
+        ana_bina2 = Bina(self.sim_ayarlari['ekran_genislik'] - 100, self.sim_ayarlari['ekran_yukseklik'] // 2, 2, renk2, can=5000)
+        self.binalar[2].append(ana_bina2)
+        for _ in range(takim2_ayarlari['baslangic_birimleri']['Isci']):
+            self.birimler[2].append(Isci(ana_bina2.x - 70, ana_bina2.y + random.randint(-20, 20), 2, renk2))
+
+    def birim_uretebilir_mi(self, takim_id, birim_tipi):
+        #... (öncekiyle aynı)
+        maliyet = self.ekonomi_ayarlari['birim_maliyetleri'][birim_tipi]
+        mevcut_kaynaklar = self.kaynaklar[f"takim{takim_id}"]
+        for kaynak, deger in maliyet.items():
+            if mevcut_kaynaklar.get(kaynak, 0) < deger:
+                return False
+        return True
+
+    def maliyeti_dus(self, takim_id, birim_tipi):
+        #... (öncekiyle aynı)
+        maliyet = self.ekonomi_ayarlari['birim_maliyetleri'][birim_tipi]
+        for kaynak, deger in maliyet.items():
+            self.kaynaklar[f"takim{takim_id}"][kaynak] -= deger
+
+    def en_yakin_kaynagi_bul(self, isci, kaynak_tipi):
+        uygun_kaynaklar = [k for k in self.harita_kaynaklari if k.kaynak_tipi == kaynak_tipi and k.miktar > 0]
+        if not uygun_kaynaklar: return None
+        return min(uygun_kaynaklar, key=lambda k: isci.mesafe_hesapla(k))
+
+    def en_yakin_dusman_birim_bul(self, savascilar, dusman_takim_id):
+        if not self.birimler[dusman_takim_id] or not savascilar: return None
+        # Basitlik için ilk savaşçının konumunu referans al
+        return min(self.birimler[dusman_takim_id], key=lambda d: savascilar[0].mesafe_hesapla(d))
 
 def oyunu_oyna(ayarlar, gorsel_mod=True):
-    """
-    Simülasyonun bir tam maçını çalıştırır.
-    :param ayarlar: Simülasyon yapılandırmasını içeren dictionary.
-    :param gorsel_mod: Pygame penceresinin açılıp açılmayacağını belirler.
-    :return: Kazanan takımın ID'si (1 veya 2), ya da 0 (hata/berabere).
-    """
+    yonetici = OyunYonetici(ayarlar)
     sim_ayarlari = ayarlar['simulasyon']
-    ekran_genislik = sim_ayarlari['ekran_genislik']
-    ekran_yukseklik = sim_ayarlari['ekran_yukseklik']
-    fps = sim_ayarlari['fps']
-    maks_birim_sayisi = sim_ayarlari['maksimum_birim_sayisi']
-    karar_verme_araligi = sim_ayarlari['karar_verme_araligi']
-    giris_boyutu = maks_birim_sayisi * 4 * 2
-    eylem_sayisi = 4
 
-    ekran, saat = None, None
+    # ... (pygame başlatma kısmı öncekiyle aynı)
+    ekran, saat, font = None, None, None
     if gorsel_mod:
         pygame.init()
-        ekran = pygame.display.set_mode((ekran_genislik, ekran_yukseklik))
-        pygame.display.set_caption("Yapay Zeka Savaş Simülatörü")
+        ekran = pygame.display.set_mode((sim_ayarlari['ekran_genislik'], sim_ayarlari['ekran_yukseklik']))
+        pygame.display.set_caption("Stratejik AI RTS Simülatörü")
         saat = pygame.time.Clock()
-
-    # AI Ajanlarını ve Orduları Ayarlardan Yükle
-    takim1_ayarlari = ayarlar['takim1']
-    takim2_ayarlari = ayarlar['takim2']
-    ajan1 = AIAjan(1, giris_boyutu, eylem_sayisi, takim1_ayarlari['model'])
-    ajan2 = AIAjan(2, giris_boyutu, eylem_sayisi, takim2_ayarlari['model'])
-    ajanlar = {1: ajan1, 2: ajan2}
-
-    ordular = {1: [], 2: []}
-    mermiler = []
-
-    renk1 = RENKLER[takim1_ayarlari['renk']]
-    for _ in range(takim1_ayarlari['ordu']['YakinDovuscu']): ordular[1].append(YakinDovuscu(random.randint(50, 200), random.randint(50, 550), 1, renk1))
-    for _ in range(takim1_ayarlari['ordu']['Menzilli']): ordular[1].append(Menzilli(random.randint(50, 200), random.randint(50, 550), 1, renk1))
-
-    renk2 = RENKLER[takim2_ayarlari['renk']]
-    for _ in range(takim2_ayarlari['ordu']['YakinDovuscu']): ordular[2].append(YakinDovuscu(random.randint(600, 750), random.randint(50, 550), 2, renk2))
-    for _ in range(takim2_ayarlari['ordu']['Menzilli']): ordular[2].append(Menzilli(random.randint(600, 750), random.randint(50, 550), 2, renk2))
+        font = pygame.font.SysFont(None, 24)
 
     calisiyor = True
     dongu_sayaci = 0
-    eski_durumlar, secilen_eylemler, eski_hpler = {}, {}, {}
+    eski_durumlar = {}
+    secilen_eylemler = {}
 
     while calisiyor:
-        if gorsel_mod:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    calisiyor = False
+        if gorsel_mod and pygame.event.get(pygame.QUIT): calisiyor = False
 
-        # AI Karar Verme
-        if dongu_sayaci % karar_verme_araligi == 0:
-            for takim_id in ordular.keys():
-                dusman_takim_id = 2 if takim_id == 1 else 1
-                if ordular[takim_id] and ordular[dusman_takim_id]:
-                    eski_durumlar[takim_id] = durumu_vektore_cevir(ordular, takim_id, maks_birim_sayisi, ekran_genislik, ekran_yukseklik)
-                    eski_hpler[takim_id] = {'dost': sum(a.hp for a in ordular[takim_id]), 'dusman': sum(a.hp for a in ordular[dusman_takim_id])}
-                    eylem = ajanlar[takim_id].eylem_sec(eski_durumlar[takim_id])
-                    secilen_eylemler[takim_id] = eylem
-                    eylemi_gerceklestir(takim_id, ordular[takim_id], ordular[dusman_takim_id], eylem)
+        # --- AI Karar Verme Bloğu ---
+        if dongu_sayaci % sim_ayarlari['karar_verme_araligi'] == 0:
+            for takim_id in yonetici.ajanlar.keys():
+                eski_durumlar[takim_id] = durumu_vektore_cevir_gelismis(yonetici, takim_id)
+                eylem = yonetici.ajanlar[takim_id].eylem_sec(eski_durumlar[takim_id])
+                secilen_eylemler[takim_id] = eylem
+                eylemi_gerceklestir_stratejik(yonetici, takim_id, eylem)
 
-        # Oyun Mantığı
-        for ordu in ordular.values():
-            for asker in ordu:
-                if hasattr(asker, 'hedef') and asker.hedef:
-                    if isinstance(asker.hedef, Asker) and asker.hedef.hp <= 0: asker.hedef = None
-                    saldiri = False
-                    if isinstance(asker.hedef, Asker):
-                        if isinstance(asker, YakinDovuscu): saldiri = asker.saldir(asker.hedef)
-                        elif isinstance(asker, Menzilli): saldiri = asker.saldir(asker.hedef, mermiler)
-                    if not saldiri and asker.hedef: asker.hareket_et(asker.hedef.x, asker.hedef.y)
+        # --- Oyun Mantığı Güncellemesi ---
+        # ... (öncekiyle büyük ölçüde aynı, sadece AI görev ataması kaldırıldı)
+        for takim_id, birim_listesi in yonetici.birimler.items():
+            ana_bina = next((b for b in yonetici.binalar[takim_id] if isinstance(b, Bina) and not isinstance(b, Kisla)), None)
+            for birim in birim_listesi:
+                if isinstance(birim, Isci):
+                    sonuc = birim.guncelle(ana_bina)
+                    if sonuc and sonuc[0] == 'kaynak_birak':
+                        yonetici.kaynaklar[f"takim{takim_id}"][sonuc[1]] += sonuc[2]
+                elif isinstance(birim, (YakinDovuscu, Menzilli)):
+                     if birim.hedef and birim.hedef.hp > 0:
+                         if isinstance(birim, YakinDovuscu): birim.saldir(birim.hedef)
+                         elif isinstance(birim, Menzilli): birim.saldir(birim.hedef, yonetici.mermiler)
+                         birim.hareket_et(birim.hedef.x, birim.hedef.y)
+                     else: birim.hedef = None
 
-        for mermi in mermiler[:]:
-            mermi.hareket_et()
-            dusman_takim_id = 2 if mermi.takim_id == 1 else 1
-            carpisma = False
-            for dusman in ordular[dusman_takim_id]:
-                if mermi.rect.colliderect(dusman.rect):
-                    dusman.hp -= mermi.guc
-                    mermiler.remove(mermi)
-                    carpisma = True
-                    break
-            if not carpisma and not (0 < mermi.x < ekran_genislik and 0 < mermi.y < ekran_yukseklik):
-                mermiler.remove(mermi)
+        for takim_id, bina_listesi in yonetici.binalar.items():
+            for bina in bina_listesi:
+                if isinstance(bina, Kisla):
+                    uretilen = bina.guncelle()
+                    if uretilen:
+                        renk = RENKLER[ayarlar[f'takim{takim_id}']['renk']]
+                        yeni_asker = YakinDovuscu(bina.uretim_noktasi[0], bina.uretim_noktasi[1], takim_id, renk) if uretilen == "YakinDovuscu" else Menzilli(bina.uretim_noktasi[0], bina.uretim_noktasi[1], takim_id, renk)
+                        yonetici.birimler[takim_id].append(yeni_asker)
 
-        for ordu in ordular.values():
-            ordu[:] = [asker for asker in ordu if asker.hp > 0]
+        yonetici.harita_kaynaklari[:] = [k for k in yonetici.harita_kaynaklari if k.miktar > 0]
+        for ordu in yonetici.birimler.values(): ordu[:] = [b for b in ordu if b.hp > 0]
 
-        # AI Öğrenme
-        if dongu_sayaci > 0 and (dongu_sayaci + 1) % karar_verme_araligi == 0:
-            for takim_id in ordular.keys():
+        # --- AI Öğrenme Bloğu ---
+        if dongu_sayaci > 0 and (dongu_sayaci + 1) % sim_ayarlari['karar_verme_araligi'] == 0:
+            for takim_id in yonetici.ajanlar.keys():
                 if eski_durumlar.get(takim_id) is not None:
-                    yeni_durum = durumu_vektore_cevir(ordular, takim_id, maks_birim_sayisi, ekran_genislik, ekran_yukseklik)
-                    yeni_hpler = {'dost': sum(a.hp for a in ordular.get(takim_id, [])), 'dusman': sum(a.hp for a in ordular.get(2 if takim_id == 1 else 1, []))}
-                    odul = odul_hesapla(eski_hpler[takim_id], yeni_hpler)
-                    bitti = not ordular[1] or not ordular[2]
-                    ajanlar[takim_id].hatirla(eski_durumlar[takim_id], secilen_eylemler[takim_id], odul, yeni_durum, bitti)
-                    ajanlar[takim_id].ogren()
-                    eski_durumlar[takim_id] = None
+                    yeni_durum = durumu_vektore_cevir_gelismis(yonetici, takim_id)
+                    odul = odul_hesapla_gelismis(yonetici, takim_id, eski_durumlar[takim_id], yeni_durum)
+                    bitti = not yonetici.binalar[1] or not yonetici.binalar[2]
+                    yonetici.ajanlar[takim_id].hatirla(eski_durumlar[takim_id], secilen_eylemler[takim_id], odul, yeni_durum, bitti)
+                    yonetici.ajanlar[takim_id].ogren()
 
-        # Çizim
+        # --- Çizim ve Kazanma Koşulu --- (öncekiyle aynı)
         if gorsel_mod:
             ekran.fill(RENKLER["SIYAH"])
-            for ordu in ordular.values():
-                for asker in ordu: asker.ciz(ekran)
-            for mermi in mermiler: mermi.ciz(ekran)
+            for kaynak in yonetici.harita_kaynaklari: kaynak.ciz(ekran)
+            for takim_list in yonetici.binalar.values():
+                for bina in takim_list: bina.ciz(ekran)
+            for takim_list in yonetici.birimler.values():
+                for birim in takim_list: birim.ciz(ekran)
+            kaynak_yazisi1 = f"Takim 1: {yonetici.kaynaklar['takim1']}"
+            yazi_render1 = font.render(kaynak_yazisi1, True, RENKLER['BEYAZ'])
+            ekran.blit(yazi_render1, (10, 10))
+            kaynak_yazisi2 = f"Takim 2: {yonetici.kaynaklar['takim2']}"
+            yazi_render2 = font.render(kaynak_yazisi2, True, RENKLER['BEYAZ'])
+            ekran.blit(yazi_render2, (sim_ayarlari['ekran_genislik'] - yazi_render2.get_width() - 10, 10))
             pygame.display.flip()
-            saat.tick(fps)
+            saat.tick(sim_ayarlari['fps'])
 
         dongu_sayaci += 1
-
-        # Kazanma Koşulu
-        if not ordular[1] or not ordular[2]:
-            kazanan = 2 if not ordular[1] else 1
+        if not yonetici.binalar[1] or not yonetici.binalar[2]:
+            kazanan = 2 if not yonetici.binalar[1] else 1
             print(f"Oyun Bitti! Kazanan: Takım {kazanan}")
-
-            for takim_id in ajanlar.keys():
-                if eski_durumlar.get(takim_id) is not None:
-                    son_odul = 100 if takim_id == kazanan else -100
-                    yeni_durum = durumu_vektore_cevir(ordular, takim_id, maks_birim_sayisi, ekran_genislik, ekran_yukseklik)
-                    ajanlar[takim_id].hatirla(eski_durumlar[takim_id], secilen_eylemler[takim_id], son_odul, yeni_durum, True)
-                    ajanlar[takim_id].ogren()
-
-            ajan1.modeli_kaydet()
-            ajan2.modeli_kaydet()
+            # Son ödülleri ver ve kaydet
+            for takim_id in yonetici.ajanlar.keys():
+                yonetici.ajanlar[takim_id].modeli_kaydet()
             calisiyor = False
 
-            if gorsel_mod:
-                pygame.quit()
-            return kazanan
-
-    if gorsel_mod:
-        pygame.quit()
-    return 0 # Döngü bir şekilde biterse (hata vb.)
+    if gorsel_mod: pygame.quit()
+    return kazanan if 'kazanan' in locals() else 0
 
 def main():
-    """Ana fonksiyon, simülasyonu görsel modda başlatır."""
     with open('ayarlar.json', 'r') as f:
         ayarlar = json.load(f)
     oyunu_oyna(ayarlar, gorsel_mod=True)

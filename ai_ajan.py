@@ -4,14 +4,16 @@ import torch.optim as optim
 import torch.nn.functional as F
 import numpy as np
 import os
+import random
 
 class NoralAg(nn.Module):
     """AI için karar mekanizması olarak hizmet edecek olan ileri beslemeli nöral ağ."""
     def __init__(self, girdi_boyutu, cikti_boyutu):
         super(NoralAg, self).__init__()
-        self.katman1 = nn.Linear(girdi_boyutu, 128)
-        self.katman2 = nn.Linear(128, 128)
-        self.katman3 = nn.Linear(128, cikti_boyutu)
+        # Katman boyutları, daha karmaşık durumlar için genişletildi
+        self.katman1 = nn.Linear(girdi_boyutu, 256)
+        self.katman2 = nn.Linear(256, 256)
+        self.katman3 = nn.Linear(256, cikti_boyutu)
 
     def forward(self, durum):
         x = F.relu(self.katman1(durum))
@@ -19,12 +21,17 @@ class NoralAg(nn.Module):
         return self.katman3(x)
 
 class AIAjan:
+    """
+    Derin Q-Learning kullanarak stratejik kararlar veren yapay zeka ajanı.
+    """
     def __init__(self, takim_id, girdi_boyutu, eylem_sayisi, model_kayit_yolu=None):
         self.takim_id = takim_id
+        self.girdi_boyutu = girdi_boyutu
         self.eylem_sayisi = eylem_sayisi
-        self.model = NoralAg(girdi_boyutu, eylem_sayisi)
+
+        self.model = NoralAg(self.girdi_boyutu, self.eylem_sayisi)
         self.optimizer = optim.Adam(self.model.parameters(), lr=0.001)
-        self.hafiza = [] # (durum, eylem, ödül, sonraki_durum, bitti)
+        self.hafiza = []
         self.hafiza_kapasitesi = 10000
 
         self.model_kayit_yolu = model_kayit_yolu
@@ -33,6 +40,7 @@ class AIAjan:
 
     def eylem_sec(self, durum, kesif_orani=0.1):
         """Verilen duruma göre, keşif (rastgele) veya sömürü (model) yaparak bir eylem seçer."""
+        # Yeterli eğitimden sonra keşif oranını düşür (isteğe bağlı)
         if np.random.rand() < kesif_orani:
             return np.random.randint(self.eylem_sayisi)
         else:
@@ -47,21 +55,15 @@ class AIAjan:
             self.hafiza.pop(0)
         self.hafiza.append((durum, eylem, odul, sonraki_durum, bitti))
 
-    def ogren(self, batch_boyutu=64, gamma=0.99):
+    def ogren(self, batch_boyutu=128, gamma=0.99):
         """Hafızadan rastgele bir 'batch' alarak modeli eğitir."""
         if len(self.hafiza) < batch_boyutu:
             return
 
-        batch = np.random.choice(len(self.hafiza), batch_boyutu, replace=False)
+        # Hafızadan rastgele bir örneklem seç
+        orneklem = random.sample(self.hafiza, batch_boyutu)
 
-        durumlar, eylemler, oduller, sonraki_durumlar, bittiler = [], [], [], [], []
-        for i in batch:
-            d, e, o, sd, b = self.hafiza[i]
-            durumlar.append(d)
-            eylemler.append(e)
-            oduller.append(o)
-            sonraki_durumlar.append(sd)
-            bittiler.append(b)
+        durumlar, eylemler, oduller, sonraki_durumlar, bittiler = zip(*orneklem)
 
         durumlar = torch.FloatTensor(np.array(durumlar))
         eylemler = torch.LongTensor(eylemler)
@@ -69,20 +71,14 @@ class AIAjan:
         sonraki_durumlar = torch.FloatTensor(np.array(sonraki_durumlar))
         bittiler = torch.BoolTensor(bittiler)
 
-        # Mevcut durumlar için Q değerlerini al
         mevcut_q_degerleri = self.model(durumlar).gather(1, eylemler.unsqueeze(1))
-
-        # Sonraki durumlar için maksimum Q değerlerini hesapla
         sonraki_q_degerleri = self.model(sonraki_durumlar).max(1)[0].detach()
         sonraki_q_degerleri[bittiler] = 0.0
 
-        # Hedef Q değerlerini hesapla
         hedef_q_degerleri = oduller + (gamma * sonraki_q_degerleri)
 
-        # Kayıp (loss) fonksiyonunu hesapla
         kayip = F.mse_loss(mevcut_q_degerleri.squeeze(), hedef_q_degerleri)
 
-        # Geri yayılım (backpropagation)
         self.optimizer.zero_grad()
         kayip.backward()
         self.optimizer.step()
@@ -98,6 +94,6 @@ class AIAjan:
         if self.model_kayit_yolu and os.path.exists(self.model_kayit_yolu):
             print(f"Takım {self.takim_id} modeli yükleniyor: {self.model_kayit_yolu}")
             self.model.load_state_dict(torch.load(self.model_kayit_yolu))
-            self.model.eval() # Modeli değerlendirme moduna al
+            self.model.eval()
         else:
             print(f"Takım {self.takim_id} için kayıtlı model bulunamadı, yeni model oluşturuluyor.")
