@@ -1,0 +1,54 @@
+{
+    "takim1": {
+        "model": "ogrenim_verileri/takim1_model.pth",
+        "baslangic_birimleri": {
+            "Isci": 5
+        },
+        "renk": "MAVI"
+    },
+    "takim2": {
+        "model": "ogrenim_verileri/takim2_model.pth",
+        "baslangic_birimleri": {
+            "Isci": 5
+        },
+        "renk": "KIRMIZI"
+    },
+    "ekonomi": {
+        "baslangic_kaynaklari": {
+            "odun": 200,
+            "gıda": 100,
+            "maden": 50
+        },
+        "birim_maliyetleri": {
+            "Isci": {
+                "gıda": 50
+            },
+            "YakinDovuscu": {
+                "gıda": 75,
+                "maden": 25
+            },
+            "Menzilli": {
+                "odun": 50,
+                "gıda": 50
+            },
+            "Kisla": {
+                "odun": 150,
+                "maden": 50
+            }
+        }
+    },
+    "simulasyon": {
+        "ekran_genislik": 1024,
+        "ekran_yukseklik": 768,
+        "fps": 60,
+        "maksimum_birim_sayisi": 20,
+        "karar_verme_araligi": 45
+    },
+    "harita": {
+        "kaynak_sayisi": {
+            "odun": 10,
+            "gıda": 15,
+            "maden": 8
+        }
+    }
+}
