@@ -42,7 +42,8 @@
         "ekran_yukseklik": 768,
         "fps": 60,
         "maksimum_birim_sayisi": 20,
-        "karar_verme_araligi": 45
+        "karar_verme_araligi": 45,
+        "saldirmazlik_suresi": 1800
     },
     "harita": {
         "kaynak_sayisi": {
