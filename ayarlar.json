@@ -1,0 +1,25 @@
+{
+    "takim1": {
+        "model": "ogrenim_verileri/takim1_model.pth",
+        "ordu": {
+            "YakinDovuscu": 5,
+            "Menzilli": 3
+        },
+        "renk": "MAVI"
+    },
+    "takim2": {
+        "model": "ogrenim_verileri/takim2_model.pth",
+        "ordu": {
+            "YakinDovuscu": 5,
+            "Menzilli": 3
+        },
+        "renk": "KIRMIZI"
+    },
+    "simulasyon": {
+        "ekran_genislik": 800,
+        "ekran_yukseklik": 600,
+        "fps": 60,
+        "maksimum_birim_sayisi": 8,
+        "karar_verme_araligi": 30
+    }
+}
